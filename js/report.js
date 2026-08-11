@@ -67,12 +67,13 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
   }).join("");
 
   const missingHtml = missing.length
-    ? `<div class="section-title">${t("missingItems")}</div><ul class="missing-list">${missing.map((m) => `<li>${escapeHtml(m.label)} — ${m.pct.toFixed(0)}%</li>`).join("")}</ul>`
+    ? `<div class="report-section"><div class="section-title">${t("missingItems")}</div><ul class="missing-list">${missing.map((m) => `<li>${escapeHtml(m.label)} — ${m.pct.toFixed(0)}%</li>`).join("")}</ul></div>`
     : "";
 
   const boreholeRows = rows.filter((r) => r.type === "soil");
   const coordsHtml = boreholeRows.length
-    ? `<div class="section-title">${t("boreholeInfo")}</div>
+    ? `<div class="report-section">
+       <div class="section-title">${t("boreholeInfo")}</div>
        <table class="report-table-closed">
          <thead><tr><th>${t("boreholeName")}</th><th>${t("coordN")}</th><th>${t("coordE")}</th><th>${t("elevation")}</th><th>${t("waterLevel")}</th></tr></thead>
          <tbody>${boreholeRows.map((r) => `<tr>
@@ -82,7 +83,8 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
            <td class="num">${escapeHtml(r.elevation || "—")}</td>
            <td class="num">${escapeHtml(r.waterLevel || "—")}</td>
          </tr>`).join("")}</tbody>
-       </table>`
+       </table>
+       </div>`
     : "";
 
   const workTypeTags = [
@@ -108,34 +110,38 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
 
     <div class="report-title">${t("reportTitle")}</div>
 
-    <table class="report-info-table report-table-closed">
-      <tr><td>${t("project")}</td><td>${escapeHtml(project.name || "—")}</td></tr>
-      <tr><td>${t("location")}</td><td>${escapeHtml(project.location || "—")}</td></tr>
-      <tr><td>${t("siteEngineer")}</td><td>${escapeHtml(project.siteEngineer || "—")}</td></tr>
-      <tr><td>${t("manager")}</td><td>${escapeHtml(project.manager || "—")}</td></tr>
-      <tr><td>${t("workTypes")}</td><td>${escapeHtml(workTypeTags || "—")}</td></tr>
-    </table>
+    <div class="report-section">
+      <table class="report-info-table report-table-closed">
+        <tr><td>${t("project")}</td><td>${escapeHtml(project.name || "—")}</td></tr>
+        <tr><td>${t("location")}</td><td>${escapeHtml(project.location || "—")}</td></tr>
+        <tr><td>${t("siteEngineer")}</td><td>${escapeHtml(project.siteEngineer || "—")}</td></tr>
+        <tr><td>${t("manager")}</td><td>${escapeHtml(project.manager || "—")}</td></tr>
+        <tr><td>${t("workTypes")}</td><td>${escapeHtml(workTypeTags || "—")}</td></tr>
+      </table>
 
-    <div class="report-progress-wrap">
-      <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:4px;">
-        <span>${t("overallProgress")}</span><span>${overallPct.toFixed(0)}%</span>
+      <div class="report-progress-wrap">
+        <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:4px;">
+          <span>${t("overallProgress")}</span><span>${overallPct.toFixed(0)}%</span>
+        </div>
+        <div class="progress-bar"><div style="width:${overallPct.toFixed(0)}%"></div></div>
       </div>
-      <div class="progress-bar"><div style="width:${overallPct.toFixed(0)}%"></div></div>
     </div>
 
-    <div class="section-title">${t("itemsTable")}</div>
-    <table class="report-table-closed">
-      <thead><tr>
-        <th>${t("itemsTable")}</th><th>${t("assignee")}</th><th>${t("qtyContract")}</th><th>${t("qtyToday")}</th><th>${t("completedTotal")}</th><th>${t("completionRate")}</th><th>${t("status")}</th>
-      </tr></thead>
-      <tbody>${rowsHtml || `<tr><td colspan="7" style="text-align:center;color:#888;">—</td></tr>`}</tbody>
-    </table>
+    <div class="report-section">
+      <div class="section-title">${t("itemsTable")}</div>
+      <table class="report-table-closed">
+        <thead><tr>
+          <th>${t("itemsTable")}</th><th>${t("assignee")}</th><th>${t("qtyContract")}</th><th>${t("qtyToday")}</th><th>${t("completedTotal")}</th><th>${t("completionRate")}</th><th>${t("status")}</th>
+        </tr></thead>
+        <tbody>${rowsHtml || `<tr><td colspan="7" style="text-align:center;color:#888;">—</td></tr>`}</tbody>
+      </table>
+    </div>
 
     ${missingHtml}
 
     ${coordsHtml}
 
-    ${project.siteImageUrl ? `<div class="section-title">${t("siteImage")}</div><img class="report-photo" src="${project.siteImageUrl}" />` : ""}
+    ${project.siteImageUrl ? `<div class="report-section"><div class="section-title">${t("siteImage")}</div><img class="report-photo" src="${project.siteImageUrl}" /></div>` : ""}
 
     <div class="sign-row">
       <div>
@@ -168,23 +174,68 @@ export function buildSummaryText({ project, boreholes, surveyItems, dKey, lang }
 export async function exportReportToPdf(elementId, filename) {
   const { jsPDF } = window.jspdf;
   const el = document.getElementById(elementId);
-  const canvas = await window.html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-  const imgData = canvas.toDataURL("image/png");
+  const scale = 2;
+
+  const canvas = await window.html2canvas(el, { scale, useCORS: true, backgroundColor: "#ffffff" });
+
+  const pageWidthMm = 210;
+  const pageHeightMm = 297;
+  const marginTopMm = 8;
+  const marginBottomMm = 12; // leaves room for the page-number footer
+  const usableHeightMm = pageHeightMm - marginTopMm - marginBottomMm;
+
+  const elRect = el.getBoundingClientRect();
+  const cssWidthPx = elRect.width;
+  const pxPerCssPx = canvas.width / cssWidthPx; // actual rendered scale (matches html2canvas `scale`)
+  const pxPerMm = cssWidthPx / pageWidthMm; // .report-page is authored at 210mm wide
+  const usableHeightPx = usableHeightMm * pxPerMm; // in CSS px (un-scaled)
+
+  // Only break between top-level sections (never mid-table / mid-row).
+  const children = Array.from(el.children);
+  const boxes = children.map((c) => {
+    const r = c.getBoundingClientRect();
+    return { top: r.top - elRect.top, bottom: r.bottom - elRect.top };
+  });
+
+  const breakpoints = [0];
+  let pageStartPx = 0;
+  boxes.forEach((box) => {
+    if (box.bottom - pageStartPx > usableHeightPx && box.top > pageStartPx) {
+      breakpoints.push(box.top);
+      pageStartPx = box.top;
+    }
+  });
+  breakpoints.push(elRect.height);
+
   const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-  const pageWidth = 210;
-  const pageHeight = 297;
-  const imgWidth = pageWidth;
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
-  let heightLeft = imgHeight;
-  let position = 0;
-  pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-  heightLeft -= pageHeight;
-  while (heightLeft > 0) {
-    position = heightLeft - imgHeight;
-    pdf.addPage();
-    pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
+  const totalPages = breakpoints.length - 1;
+
+  for (let i = 0; i < totalPages; i++) {
+    const sliceTopPx = Math.round(breakpoints[i] * pxPerCssPx);
+    const sliceBottomPx = Math.round(breakpoints[i + 1] * pxPerCssPx);
+    const sliceHeightPx = Math.max(1, sliceBottomPx - sliceTopPx);
+
+    const sliceCanvas = document.createElement("canvas");
+    sliceCanvas.width = canvas.width;
+    sliceCanvas.height = sliceHeightPx;
+    const ctx = sliceCanvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+    ctx.drawImage(canvas, 0, sliceTopPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
+
+    const imgData = sliceCanvas.toDataURL("image/png");
+    const sliceHeightMm = sliceHeightPx / pxPerCssPx / pxPerMm;
+
+    if (i > 0) pdf.addPage();
+    pdf.addImage(imgData, "PNG", 0, marginTopMm, pageWidthMm, sliceHeightMm);
+
+    if (totalPages > 1) {
+      pdf.setFontSize(8);
+      pdf.setTextColor(120, 120, 120);
+      pdf.text(`${i + 1}/${totalPages}`, pageWidthMm / 2, pageHeightMm - 6, { align: "center" });
+    }
   }
+
   pdf.save(filename);
 }
 

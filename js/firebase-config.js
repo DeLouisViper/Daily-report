@@ -5,7 +5,7 @@
 // Xem hướng dẫn lấy các giá trị này trong README.md (Bước 2).
 // ============================================================
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyDFmY6BLXkeaop_60wYIEWpUNIveXuNvTY",
   authDomain: "dailyhub-ceb34.firebaseapp.com",
   projectId: "dailyhub-ceb34",

@@ -5,11 +5,12 @@
 // Xem hướng dẫn lấy các giá trị này trong README.md (Bước 2).
 // ============================================================
 
-export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+const firebaseConfig = {
+  apiKey: "AIzaSyDFmY6BLXkeaop_60wYIEWpUNIveXuNvTY",
+  authDomain: "dailyhub-ceb34.firebaseapp.com",
+  projectId: "dailyhub-ceb34",
+  storageBucket: "dailyhub-ceb34.firebasestorage.app",
+  messagingSenderId: "890965469003",
+  appId: "1:890965469003:web:b5df19c68b0e234d176ace",
+  measurementId: "G-X4LNK8V9VY"
 };

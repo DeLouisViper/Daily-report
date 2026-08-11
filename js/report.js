@@ -26,6 +26,7 @@ export function buildReportRows(project, boreholes, surveyItems, dKey) {
       assignee: b.team || "—",
       contract, today, total, pct,
       type: "soil",
+      coordN: b.coordN, coordE: b.coordE, elevation: b.elevation, waterLevel: b.waterLevel,
     });
   });
   (surveyItems || []).forEach((s) => {
@@ -44,7 +45,7 @@ export function buildReportRows(project, boreholes, surveyItems, dKey) {
   return rows;
 }
 
-export function buildReportHTML({ project, boreholes, surveyItems, dKey, activities, currentUser, lang }) {
+export function buildReportHTML({ project, boreholes, surveyItems, dKey, currentUser, lang }) {
   const rows = buildReportRows(project, boreholes, surveyItems, dKey);
   const overallPct = rows.length ? rows.reduce((a, r) => a + r.pct, 0) / rows.length : 0;
   const missing = rows.filter((r) => r.pct < 100);
@@ -57,8 +58,9 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, activit
     return `<tr>
       <td>${escapeHtml(r.label)}</td>
       <td>${escapeHtml(r.assignee)}</td>
+      <td class="num">${r.contract.toLocaleString()} ${escapeHtml(r.unit)}</td>
       <td class="num">${r.today.toLocaleString()} ${escapeHtml(r.unit)}</td>
-      <td class="num">${r.total.toLocaleString()} / ${r.contract.toLocaleString()} ${escapeHtml(r.unit)}</td>
+      <td class="num">${r.total.toLocaleString()} ${escapeHtml(r.unit)}</td>
       <td class="num">${r.pct.toFixed(0)}%</td>
       <td>${t(st.key)}</td>
     </tr>`;
@@ -68,14 +70,20 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, activit
     ? `<div class="section-title">${t("missingItems")}</div><ul class="missing-list">${missing.map((m) => `<li>${escapeHtml(m.label)} — ${m.pct.toFixed(0)}%</li>`).join("")}</ul>`
     : "";
 
-  const dayActivities = (activities || []).filter((a) => a.ts && a.ts.toDate && dKeyOf(a.ts.toDate()) === dKey);
-  const activityRowsHtml = dayActivities.length
-    ? dayActivities.map((a) => `<tr>
-        <td>${a.ts.toDate().toLocaleTimeString(lang === "vi" ? "vi-VN" : "en-US", { hour: "2-digit", minute: "2-digit" })}</td>
-        <td>${escapeHtml(a.userName || "")}</td>
-        <td>${escapeHtml(a.userName || "")} ${t("action_" + (a.action || "updated"))}: ${escapeHtml(a.itemLabel || "")}</td>
-      </tr>`).join("")
-    : `<tr><td colspan="3" style="text-align:center;color:#888;">—</td></tr>`;
+  const boreholeRows = rows.filter((r) => r.type === "soil");
+  const coordsHtml = boreholeRows.length
+    ? `<div class="section-title">${t("boreholeInfo")}</div>
+       <table class="report-table-closed">
+         <thead><tr><th>${t("boreholeName")}</th><th>${t("coordN")}</th><th>${t("coordE")}</th><th>${t("elevation")}</th><th>${t("waterLevel")}</th></tr></thead>
+         <tbody>${boreholeRows.map((r) => `<tr>
+           <td>${escapeHtml(r.label)}</td>
+           <td class="num">${escapeHtml(r.coordN || "—")}</td>
+           <td class="num">${escapeHtml(r.coordE || "—")}</td>
+           <td class="num">${escapeHtml(r.elevation || "—")}</td>
+           <td class="num">${escapeHtml(r.waterLevel || "—")}</td>
+         </tr>`).join("")}</tbody>
+       </table>`
+    : "";
 
   const workTypeTags = [
     project.workTypes?.soil ? t("soilInvestigation") : null,
@@ -100,7 +108,7 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, activit
 
     <div class="report-title">${t("reportTitle")}</div>
 
-    <table class="report-info-table">
+    <table class="report-info-table report-table-closed">
       <tr><td>${t("project")}</td><td>${escapeHtml(project.name || "—")}</td></tr>
       <tr><td>${t("location")}</td><td>${escapeHtml(project.location || "—")}</td></tr>
       <tr><td>${t("siteEngineer")}</td><td>${escapeHtml(project.siteEngineer || "—")}</td></tr>
@@ -116,22 +124,18 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, activit
     </div>
 
     <div class="section-title">${t("itemsTable")}</div>
-    <table>
+    <table class="report-table-closed">
       <thead><tr>
-        <th>${t("itemsTable")}</th><th>${t("assignee")}</th><th>${t("qtyToday")}</th><th>${t("completedTotal")}</th><th>${t("completionRate")}</th><th>${t("status")}</th>
+        <th>${t("itemsTable")}</th><th>${t("assignee")}</th><th>${t("qtyContract")}</th><th>${t("qtyToday")}</th><th>${t("completedTotal")}</th><th>${t("completionRate")}</th><th>${t("status")}</th>
       </tr></thead>
-      <tbody>${rowsHtml || `<tr><td colspan="6" style="text-align:center;color:#888;">—</td></tr>`}</tbody>
+      <tbody>${rowsHtml || `<tr><td colspan="7" style="text-align:center;color:#888;">—</td></tr>`}</tbody>
     </table>
 
     ${missingHtml}
 
-    ${project.siteImageUrl ? `<div class="section-title">${t("siteImage")}</div><img class="report-photo" src="${project.siteImageUrl}" />` : ""}
+    ${coordsHtml}
 
-    <div class="section-title">${t("activityToday")}</div>
-    <table>
-      <thead><tr><th style="width:60px;">${t("time")}</th><th style="width:140px;">${t("user")}</th><th>${t("activity")}</th></tr></thead>
-      <tbody>${activityRowsHtml}</tbody>
-    </table>
+    ${project.siteImageUrl ? `<div class="section-title">${t("siteImage")}</div><img class="report-photo" src="${project.siteImageUrl}" />` : ""}
 
     <div class="sign-row">
       <div>
@@ -184,12 +188,6 @@ export async function exportReportToPdf(elementId, filename) {
   pdf.save(filename);
 }
 
-function dKeyOf(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 function escapeHtml(str) {
   return String(str ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

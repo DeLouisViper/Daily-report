@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Daily Report</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="auth-logo">
+        <div class="mark">DR</div>
+        <div>
+          <div class="name" data-i18n="appName">Daily Report</div>
+          <div class="tag" data-i18n="appTagline">Quy trình hiện trường</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item" data-view="overview"><span class="nav-icon">▦</span><span data-i18n="overview">Tổng quan</span></button>
+        <button class="nav-item" data-view="projects"><span class="nav-icon">▤</span><span data-i18n="currentProjects">Dự án hiện tại</span></button>
+        <button class="nav-item" data-view="report"><span class="nav-icon">▧</span><span data-i18n="dailyReport">Báo cáo ngày</span></button>
+        <button class="nav-item" data-view="activity"><span class="nav-icon">◷</span><span data-i18n="activityLog">Nhật ký</span></button>
+        <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span><span data-i18n="settings">Cài đặt</span></button>
+      </nav>
+
+      <div class="sidebar-user">
+        <div class="avatar" id="userAvatar">?</div>
+        <div class="who">
+          <div class="name" id="userNameLabel">—</div>
+          <div class="role" id="userRoleLabel">—</div>
+        </div>
+      </div>
+      <button class="logout-link" id="logoutBtn" data-i18n="logout">Đăng xuất</button>
+    </aside>
+
+    <main class="main" id="mainView">
+      <div class="empty-state">Loading…</div>
+    </main>
+  </div>
+
+  <div class="save-indicator hidden" id="saveIndicator">
+    <span class="save-dot"></span>
+    <span id="saveIndicatorText">—</span>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

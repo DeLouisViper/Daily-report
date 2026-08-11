@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Daily Report — Đăng nhập</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <div class="mark">DR</div>
+        <div>
+          <div class="name" data-i18n="appName">Daily Report</div>
+          <div class="tag" data-i18n="appTagline">Quy trình hiện trường</div>
+        </div>
+      </div>
+
+      <!-- LOGIN FORM -->
+      <form id="loginForm">
+        <div class="field">
+          <label data-i18n="email">Email</label>
+          <input type="email" id="loginEmail" required autocomplete="email" />
+        </div>
+        <div class="field">
+          <label data-i18n="password">Mật khẩu</label>
+          <input type="password" id="loginPassword" required autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="loginBtn">
+          <span data-i18n="loginBtn">Đăng nhập</span>
+        </button>
+        <p class="error-msg" id="loginError"></p>
+      </form>
+
+      <!-- REGISTER FORM -->
+      <form id="registerForm" class="hidden">
+        <div class="field">
+          <label data-i18n="fullName">Họ và tên</label>
+          <input type="text" id="regName" required autocomplete="name" />
+        </div>
+        <div class="field">
+          <label data-i18n="email">Email</label>
+          <input type="email" id="regEmail" required autocomplete="email" />
+        </div>
+        <div class="field">
+          <label data-i18n="password">Mật khẩu</label>
+          <input type="password" id="regPassword" required minlength="6" autocomplete="new-password" />
+        </div>
+        <div class="field">
+          <label data-i18n="confirmPassword">Xác nhận mật khẩu</label>
+          <input type="password" id="regPassword2" required minlength="6" autocomplete="new-password" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="registerBtn">
+          <span data-i18n="registerBtn">Tạo tài khoản</span>
+        </button>
+        <p class="error-msg" id="registerError"></p>
+      </form>
+
+      <p class="switch-line">
+        <span id="toRegisterLine">
+          <span data-i18n="noAccount">Chưa có tài khoản?</span>
+          <a id="showRegister" data-i18n="createOne">Đăng ký ngay</a>
+        </span>
+        <span id="toLoginLine" class="hidden">
+          <span data-i18n="haveAccount">Đã có tài khoản?</span>
+          <a id="showLogin" data-i18n="loginNow">Đăng nhập</a>
+        </span>
+      </p>
+    </div>
+
+    <div style="position:fixed; top:16px; right:16px; display:flex; gap:8px;">
+      <div class="toggle-pill" id="langToggle">
+        <button data-lang="vi">VI</button>
+        <button data-lang="en">EN</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="themeToggle">🌙</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/auth-page.js"></script>
+</body>
+</html>

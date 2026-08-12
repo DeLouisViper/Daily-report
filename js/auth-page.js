@@ -75,15 +75,15 @@ registerForm.addEventListener("submit", async (e) => {
   const btn = document.getElementById("registerBtn");
   btn.disabled = true;
   try {
-    // Is this the very first user in the system? If so, make them admin.
+    // Tạo tài khoản (đăng nhập) trước, để khi đọc /users đã có quyền theo Rules.
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
-await updateProfile(cred.user, { displayName: name });
+    await updateProfile(cred.user, { displayName: name });
 
-// Là người đầu tiên trong hệ thống? Nếu đúng thì tự động là Admin.
-const usersSnap = await getDocs(collection(db, "users"));
-const isFirstUser = usersSnap.empty;
+    // Là người đầu tiên trong hệ thống? Nếu đúng thì tự động là Admin.
+    const usersSnap = await getDocs(collection(db, "users"));
+    const isFirstUser = usersSnap.empty;
 
-await setDoc(doc(db, "users", cred.user.uid), {
+    await setDoc(doc(db, "users", cred.user.uid), {
       name,
       email,
       role: isFirstUser ? "admin" : "engineer",

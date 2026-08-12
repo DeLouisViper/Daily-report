@@ -8,6 +8,7 @@ function statusOf(pct) {
 }
 
 function surveyLabel(item) {
+  if (item.type === "custom") return item.customLabel || "—";
   const known = ["benchmark_place", "benchmark_bury", "benchmark_check", "leveling", "rtk", "underground", "drone"];
   if (known.includes(item.type)) return t(item.type);
   return item.type;
@@ -37,7 +38,7 @@ export function buildReportRows(project, boreholes, surveyItems, dKey) {
     rows.push({
       label: surveyLabel(s),
       unit: s.unit || "",
-      assignee: "—",
+      assignee: s.assignee || "—",
       contract, today, total, pct,
       type: "survey",
     });
@@ -173,70 +174,92 @@ export function buildSummaryText({ project, boreholes, surveyItems, dKey, lang }
 
 export async function exportReportToPdf(elementId, filename) {
   const { jsPDF } = window.jspdf;
-  const el = document.getElementById(elementId);
-  const scale = 2;
+  const original = document.getElementById(elementId);
 
-  const canvas = await window.html2canvas(el, { scale, useCORS: true, backgroundColor: "#ffffff" });
+  // Render from an off-screen clone fixed at the true A4 width (210mm), regardless
+  // of the device/viewport used to trigger the export. Without this, exporting from
+  // a narrow mobile screen captures the squeezed mobile layout and stretches it to
+  // A4 width, producing a distorted/misaligned PDF.
+  const el = original.cloneNode(true);
+  el.removeAttribute("id");
+  el.style.position = "fixed";
+  el.style.top = "0";
+  el.style.left = "-99999px";
+  el.style.width = "210mm";
+  el.style.minHeight = "0";
+  el.style.margin = "0";
+  el.style.boxShadow = "none";
+  el.style.zIndex = "-1";
+  document.body.appendChild(el);
+  // Let the browser lay out and paint the clone before snapshotting it.
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
-  const pageWidthMm = 210;
-  const pageHeightMm = 297;
-  const marginTopMm = 8;
-  const marginBottomMm = 12; // leaves room for the page-number footer
-  const usableHeightMm = pageHeightMm - marginTopMm - marginBottomMm;
+  try {
+    const scale = 2;
+    const canvas = await window.html2canvas(el, { scale, useCORS: true, backgroundColor: "#ffffff" });
 
-  const elRect = el.getBoundingClientRect();
-  const cssWidthPx = elRect.width;
-  const pxPerCssPx = canvas.width / cssWidthPx; // actual rendered scale (matches html2canvas `scale`)
-  const pxPerMm = cssWidthPx / pageWidthMm; // .report-page is authored at 210mm wide
-  const usableHeightPx = usableHeightMm * pxPerMm; // in CSS px (un-scaled)
+    const pageWidthMm = 210;
+    const pageHeightMm = 297;
+    const marginTopMm = 8;
+    const marginBottomMm = 12; // leaves room for the page-number footer
+    const usableHeightMm = pageHeightMm - marginTopMm - marginBottomMm;
 
-  // Only break between top-level sections (never mid-table / mid-row).
-  const children = Array.from(el.children);
-  const boxes = children.map((c) => {
-    const r = c.getBoundingClientRect();
-    return { top: r.top - elRect.top, bottom: r.bottom - elRect.top };
-  });
+    const elRect = el.getBoundingClientRect();
+    const cssWidthPx = elRect.width;
+    const pxPerCssPx = canvas.width / cssWidthPx; // actual rendered scale (matches html2canvas `scale`)
+    const pxPerMm = cssWidthPx / pageWidthMm; // clone is fixed at 210mm wide
+    const usableHeightPx = usableHeightMm * pxPerMm; // in CSS px (un-scaled)
 
-  const breakpoints = [0];
-  let pageStartPx = 0;
-  boxes.forEach((box) => {
-    if (box.bottom - pageStartPx > usableHeightPx && box.top > pageStartPx) {
-      breakpoints.push(box.top);
-      pageStartPx = box.top;
+    // Only break between top-level sections (never mid-table / mid-row).
+    const children = Array.from(el.children);
+    const boxes = children.map((c) => {
+      const r = c.getBoundingClientRect();
+      return { top: r.top - elRect.top, bottom: r.bottom - elRect.top };
+    });
+
+    const breakpoints = [0];
+    let pageStartPx = 0;
+    boxes.forEach((box) => {
+      if (box.bottom - pageStartPx > usableHeightPx && box.top > pageStartPx) {
+        breakpoints.push(box.top);
+        pageStartPx = box.top;
+      }
+    });
+    breakpoints.push(elRect.height);
+
+    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    const totalPages = breakpoints.length - 1;
+
+    for (let i = 0; i < totalPages; i++) {
+      const sliceTopPx = Math.round(breakpoints[i] * pxPerCssPx);
+      const sliceBottomPx = Math.round(breakpoints[i + 1] * pxPerCssPx);
+      const sliceHeightPx = Math.max(1, sliceBottomPx - sliceTopPx);
+
+      const sliceCanvas = document.createElement("canvas");
+      sliceCanvas.width = canvas.width;
+      sliceCanvas.height = sliceHeightPx;
+      const ctx = sliceCanvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+      ctx.drawImage(canvas, 0, sliceTopPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
+
+      const imgData = sliceCanvas.toDataURL("image/png");
+      const sliceHeightMm = sliceHeightPx / pxPerCssPx / pxPerMm;
+
+      if (i > 0) pdf.addPage();
+      pdf.addImage(imgData, "PNG", 0, marginTopMm, pageWidthMm, sliceHeightMm);
+
+      if (totalPages > 1) {
+        pdf.setFontSize(8);
+        pdf.setTextColor(120, 120, 120);
+        pdf.text(`${i + 1}/${totalPages}`, pageWidthMm / 2, pageHeightMm - 6, { align: "center" });
+      }
     }
-  });
-  breakpoints.push(elRect.height);
 
-  const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-  const totalPages = breakpoints.length - 1;
-
-  for (let i = 0; i < totalPages; i++) {
-    const sliceTopPx = Math.round(breakpoints[i] * pxPerCssPx);
-    const sliceBottomPx = Math.round(breakpoints[i + 1] * pxPerCssPx);
-    const sliceHeightPx = Math.max(1, sliceBottomPx - sliceTopPx);
-
-    const sliceCanvas = document.createElement("canvas");
-    sliceCanvas.width = canvas.width;
-    sliceCanvas.height = sliceHeightPx;
-    const ctx = sliceCanvas.getContext("2d");
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-    ctx.drawImage(canvas, 0, sliceTopPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
-
-    const imgData = sliceCanvas.toDataURL("image/png");
-    const sliceHeightMm = sliceHeightPx / pxPerCssPx / pxPerMm;
-
-    if (i > 0) pdf.addPage();
-    pdf.addImage(imgData, "PNG", 0, marginTopMm, pageWidthMm, sliceHeightMm);
-
-    if (totalPages > 1) {
-      pdf.setFontSize(8);
-      pdf.setTextColor(120, 120, 120);
-      pdf.text(`${i + 1}/${totalPages}`, pageWidthMm / 2, pageHeightMm - 6, { align: "center" });
-    }
+    pdf.save(filename);
+  } finally {
+    document.body.removeChild(el);
   }
-
-  pdf.save(filename);
 }
 
 function escapeHtml(str) {

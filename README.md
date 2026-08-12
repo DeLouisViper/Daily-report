@@ -1,3 +1,4 @@
+[README.md](https://github.com/user-attachments/files/30963622/README.md)
 # Daily Report — Quy trình hiện trường
 
 Web app quản lý dự án khảo sát (Địa chất & Địa hình), báo cáo ngày dạng A4, xuất PDF, 2 ngôn ngữ Việt/Anh, chế độ sáng/tối. Chạy hoàn toàn tĩnh (HTML/CSS/JS thuần, không cần build, không cần cài Node.js), dữ liệu lưu trên **Firebase** (Auth + Firestore — **không dùng Firebase Storage** nên không cần nâng cấp gói trả phí Blaze), host miễn phí trên **GitHub Pages**.

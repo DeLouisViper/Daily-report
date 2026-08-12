@@ -23,6 +23,10 @@ let currentProjectUnsubs = [];
 
 const SURVEY_TYPES = ["benchmark_place", "benchmark_bury", "benchmark_check", "leveling", "rtk", "underground", "drone"];
 const SURVEY_UNITS = { benchmark_place: "mốc", benchmark_bury: "mốc", benchmark_check: "mốc", leveling: "mốc", rtk: "Ha", underground: "", drone: "Ha" };
+function surveyItemLabel(s) {
+  if (s.type === "custom") return s.customLabel || "—";
+  return SURVEY_TYPES.includes(s.type) ? t(s.type) : s.type;
+}
 
 // ============================================================
 // AUTH GUARD
@@ -55,8 +59,17 @@ function initSidebar() {
   document.getElementById("userAvatar").textContent = (CURRENT_USER.name || "?").slice(0, 1).toUpperCase();
   document.getElementById("userNameLabel").textContent = CURRENT_USER.name;
   document.getElementById("userRoleLabel").textContent = t(CURRENT_USER.role);
+  const sidebarEl = document.getElementById("sidebar");
+  const menuBtn = document.getElementById("mobileMenuBtn");
+  const backdrop = document.getElementById("mobileBackdrop");
+  const closeMobileSidebar = () => { sidebarEl.classList.remove("open"); backdrop.classList.remove("show"); };
+  if (menuBtn) menuBtn.addEventListener("click", () => {
+    sidebarEl.classList.toggle("open");
+    backdrop.classList.toggle("show");
+  });
+  if (backdrop) backdrop.addEventListener("click", closeMobileSidebar);
   document.querySelectorAll(".nav-item").forEach((btn) => {
-    btn.addEventListener("click", () => navigateTo(btn.dataset.view));
+    btn.addEventListener("click", () => { navigateTo(btn.dataset.view); closeMobileSidebar(); });
   });
 }
 function setActiveNav(view) {
@@ -212,6 +225,10 @@ function openProjectModal(project) {
         <div class="field"><label data-i18n="fieldEngineer"></label><input id="pf_engineer" value="${escapeAttr(project?.siteEngineer)}" /></div>
       </div>
       <div class="field"><label data-i18n="manager"></label><input id="pf_manager" value="${escapeAttr(project?.manager)}" /></div>
+      <div class="field-row">
+        <div class="field"><label data-i18n="startDateSite"></label><input type="date" id="pf_startDate" value="${project?.startDateSite || ""}" /></div>
+        <div class="field"><label data-i18n="endDateSite"></label><input type="date" id="pf_endDate" value="${project?.endDateSite || ""}" /></div>
+      </div>
       <div class="field">
         <label data-i18n="workTypes"></label>
         <div class="checkbox-row"><input type="checkbox" id="pf_soil" ${wt.soil ? "checked" : ""} /><label for="pf_soil" data-i18n="soilInvestigation"></label></div>
@@ -246,6 +263,8 @@ function openProjectModal(project) {
         location: document.getElementById("pf_location").value.trim(),
         siteEngineer: document.getElementById("pf_engineer").value.trim(),
         manager: document.getElementById("pf_manager").value.trim(),
+        startDateSite: document.getElementById("pf_startDate").value,
+        endDateSite: document.getElementById("pf_endDate").value,
         workTypes: {
           soil: document.getElementById("pf_soil").checked,
           survey: document.getElementById("pf_survey").checked,
@@ -301,6 +320,8 @@ async function renderProjectDetail(projectId) {
         <tr><td style="color:var(--text-dim);">${t("projectLocation")}</td><td>${escapeHtml(project.location || "—")}</td></tr>
         <tr><td style="color:var(--text-dim);">${t("fieldEngineer")}</td><td>${escapeHtml(project.siteEngineer || "—")}</td></tr>
         <tr><td style="color:var(--text-dim);">${t("manager")}</td><td>${escapeHtml(project.manager || "—")}</td></tr>
+        <tr><td style="color:var(--text-dim);">${t("startDateSite")}</td><td>${escapeHtml(project.startDateSite || "—")}</td></tr>
+        <tr><td style="color:var(--text-dim);">${t("endDateSite")}</td><td>${escapeHtml(project.endDateSite || "—")}</td></tr>
         <tr><td style="color:var(--text-dim);">${t("createdBy")}</td><td>${escapeHtml(project.createdByName || "—")}</td></tr>
       </table>
     </div>
@@ -427,10 +448,6 @@ function openBoreholeModal(projectId, b) {
         <div class="field"><label data-i18n="drillTeam"></label><input id="bh_team" value="${escapeAttr(b?.team)}" /></div>
       </div>
       <div class="field-row">
-        <div class="field"><label data-i18n="startDateSite"></label><input type="date" id="bh_startSite" value="${b?.startDateSite || ""}" /></div>
-        <div class="field"><label data-i18n="endDateSite"></label><input type="date" id="bh_endSite" value="${b?.endDateSite || ""}" /></div>
-      </div>
-      <div class="field-row">
         <div class="field"><label data-i18n="contractVolume"></label><input type="number" id="bh_contract" value="${b?.contractVolume ?? ""}" /></div>
         <div class="field"><label data-i18n="unit"></label><input value="m" disabled /></div>
       </div>
@@ -460,8 +477,6 @@ function openBoreholeModal(projectId, b) {
     const data = {
       name: document.getElementById("bh_name").value.trim(),
       team: document.getElementById("bh_team").value.trim(),
-      startDateSite: document.getElementById("bh_startSite").value,
-      endDateSite: document.getElementById("bh_endSite").value,
       contractVolume: Number(document.getElementById("bh_contract").value) || 0,
       itemStartDate: document.getElementById("bh_itemStart").value,
       itemEndDate: document.getElementById("bh_itemEnd").value,
@@ -503,10 +518,10 @@ function surveyBlockHtml(s) {
   const contract = Number(s.contractQty) || 0;
   const pct = contract > 0 ? Math.min(100, (total / contract) * 100) : 0;
   const todayVal = (s.dailyLog || {})[dateKey()] || "";
-  const label = SURVEY_TYPES.includes(s.type) ? t(s.type) : s.type;
+  const label = surveyItemLabel(s);
   return `<div class="item-block" data-id="${s.id}">
     <div class="item-head">
-      <h4>📍 ${escapeHtml(label)}</h4>
+      <h4>📍 ${escapeHtml(label)} ${s.assignee ? `<span style="color:var(--text-dim); font-weight:500;">(${escapeHtml(s.assignee)})</span>` : ""}</h4>
       <div class="item-actions">
         <span class="pct-badge ${pctBadgeClass(pct)}">${pct.toFixed(0)}%</span>
         ${canEdit() ? `<button class="btn btn-ghost btn-sm edit-sv" data-i18n="edit"></button>` : ""}
@@ -533,7 +548,7 @@ function bindSurveyBlock(projectId, s) {
   if (editBtn) editBtn.addEventListener("click", () => openSurveyModal(projectId, s));
   const delBtn = el.querySelector(".del-sv");
   if (delBtn) delBtn.addEventListener("click", async () => {
-    if (confirm(t("deleteConfirm"))) await deleteSurveyItem(projectId, s.id, CURRENT_USER, s.type);
+    if (confirm(t("deleteConfirm"))) await deleteSurveyItem(projectId, s.id, CURRENT_USER, surveyItemLabel(s));
   });
   const todayInput = el.querySelector(".today-input");
   if (todayInput) {
@@ -542,14 +557,16 @@ function bindSurveyBlock(projectId, s) {
       const dailyLog = { ...(s.dailyLog || {}) };
       const val = Number(todayInput.value) || 0;
       dailyLog[dateKey()] = val;
-      await updateSurveyItem(projectId, s.id, { dailyLog }, CURRENT_USER, `${t(s.type) || s.type}: +${val}`);
+      await updateSurveyItem(projectId, s.id, { dailyLog }, CURRENT_USER, `${surveyItemLabel(s)}: +${val}`);
       showSaveIndicator();
     });
   }
 }
 function openSurveyModal(projectId, s) {
   const editing = !!s;
-  const typeOptions = SURVEY_TYPES.map((ty) => `<option value="${ty}" ${s?.type === ty ? "selected" : ""}>${t(ty)}</option>`).join("");
+  const isCustom = s?.type === "custom";
+  const typeOptions = SURVEY_TYPES.map((ty) => `<option value="${ty}" ${s?.type === ty ? "selected" : ""}>${t(ty)}</option>`).join("")
+    + `<option value="custom" ${isCustom ? "selected" : ""}>${t("customType")}</option>`;
   const modalHtml = `
   <div class="modal-backdrop" id="svModalBackdrop">
     <div class="modal">
@@ -557,10 +574,15 @@ function openSurveyModal(projectId, s) {
       <div class="field"><label data-i18n="surveyItems"></label>
         <select id="sv_type">${typeOptions}</select>
       </div>
+      <div class="field ${isCustom ? "" : "hidden"}" id="sv_customWrap">
+        <label data-i18n="customTypeName"></label>
+        <input id="sv_customLabel" value="${escapeAttr(s?.customLabel)}" />
+      </div>
       <div class="field-row">
         <div class="field"><label data-i18n="qtyContract"></label><input type="number" id="sv_contract" value="${s?.contractQty ?? ""}" /></div>
         <div class="field"><label data-i18n="customUnit"></label><input id="sv_unit" value="${escapeAttr(s?.unit)}" /></div>
       </div>
+      <div class="field"><label data-i18n="itemAssignee"></label><input id="sv_assignee" value="${escapeAttr(s?.assignee)}" /></div>
       <div class="field"><label data-i18n="note"></label><textarea id="sv_note" rows="2">${escapeHtml(s?.note)}</textarea></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="sv_cancel" data-i18n="cancel"></button>
@@ -572,20 +594,27 @@ function openSurveyModal(projectId, s) {
   applyI18n(document.getElementById("svModalBackdrop"));
   const typeSel = document.getElementById("sv_type");
   const unitInput = document.getElementById("sv_unit");
+  const customWrap = document.getElementById("sv_customWrap");
   if (!editing) unitInput.value = SURVEY_UNITS[typeSel.value] || "";
-  typeSel.addEventListener("change", () => { if (!unitInput.value || SURVEY_TYPES.includes(typeSel.dataset.prev)) unitInput.value = SURVEY_UNITS[typeSel.value] || ""; });
+  typeSel.addEventListener("change", () => {
+    customWrap.classList.toggle("hidden", typeSel.value !== "custom");
+    if (typeSel.value !== "custom") unitInput.value = SURVEY_UNITS[typeSel.value] || "";
+  });
   const close = () => document.getElementById("svModalBackdrop").remove();
   document.getElementById("closeSvModal").addEventListener("click", close);
   document.getElementById("sv_cancel").addEventListener("click", close);
   document.getElementById("sv_save").addEventListener("click", async () => {
     const data = {
       type: typeSel.value,
+      customLabel: typeSel.value === "custom" ? document.getElementById("sv_customLabel").value.trim() : "",
       contractQty: Number(document.getElementById("sv_contract").value) || 0,
       unit: unitInput.value.trim() || SURVEY_UNITS[typeSel.value] || "",
+      assignee: document.getElementById("sv_assignee").value.trim(),
       note: document.getElementById("sv_note").value.trim(),
     };
+    if (data.type === "custom" && !data.customLabel) return;
     showSaveIndicator(true);
-    if (editing) await updateSurveyItem(projectId, s.id, data, CURRENT_USER, t(data.type));
+    if (editing) await updateSurveyItem(projectId, s.id, data, CURRENT_USER, surveyItemLabel(data));
     else await addSurveyItem(projectId, data, CURRENT_USER);
     showSaveIndicator();
     close();

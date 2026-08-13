@@ -4,7 +4,7 @@ import {
 } from "./firebase.js";
 import {
   getUserDoc, watchUsers, setUserRole,
-  watchProjects, getProject, createProject, updateProject, deleteProject, resizeImageToDataUrl,
+  watchProjects, getProject, createProject, updateProject, deleteProject, resizeImageToDataUrl, updateNextDayPlan,
   watchBoreholes, addBorehole, updateBorehole, deleteBorehole,
   watchSurveyItems, addSurveyItem, updateSurveyItem, deleteSurveyItem,
   watchActivity, dateKey, sumDailyLog,
@@ -643,6 +643,10 @@ function renderReportView(preselectedProjectId) {
       <button class="btn btn-primary" id="rp_exportPdf" data-i18n="exportPdf"></button>
       <button class="btn btn-ghost" id="rp_copy" data-i18n="copySummary"></button>
     </div>
+    <div class="card">
+      <h3 data-i18n="nextDayPlan"></h3>
+      <textarea id="rp_nextPlan" rows="2" data-i18n-placeholder="nextDayPlanPlaceholder" ${canEdit() ? "" : "disabled"}></textarea>
+    </div>
     <div id="rp_container" style="overflow-x:auto; padding-bottom:20px;"></div>
   `;
   target.innerHTML = html;
@@ -666,9 +670,23 @@ function renderReportView(preselectedProjectId) {
     const html = buildReportHTML({ project, boreholes, surveyItems, dKey, activities, currentUser: CURRENT_USER, lang: getLang() });
     document.getElementById("rp_container").innerHTML = html;
     window.__reportCtx = { project, boreholes, surveyItems, dKey };
+    const planEl = document.getElementById("rp_nextPlan");
+    if (planEl) planEl.value = (project.nextDayPlan || {})[dKey] || "";
   }
   projSelect.addEventListener("change", refreshReport);
   document.getElementById("rp_date").addEventListener("change", refreshReport);
+  const planEl = document.getElementById("rp_nextPlan");
+  if (planEl) {
+    planEl.addEventListener("change", async () => {
+      const pid = projSelect.value;
+      const dKey = document.getElementById("rp_date").value || dateKey();
+      if (!pid) return;
+      showSaveIndicator(true);
+      await updateNextDayPlan(pid, dKey, planEl.value.trim(), CURRENT_USER);
+      showSaveIndicator();
+      refreshReport();
+    });
+  }
   document.getElementById("rp_exportPdf").addEventListener("click", async () => {
     const btn = document.getElementById("rp_exportPdf");
     btn.disabled = true;

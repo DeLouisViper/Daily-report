@@ -2,9 +2,9 @@ import { sumDailyLog } from "./store.js";
 import { t } from "./i18n.js";
 
 function statusOf(pct) {
-  if (pct >= 100) return { key: "completed", cls: "high" };
-  if (pct <= 0) return { key: "notStarted", cls: "low" };
-  return { key: "inProgress", cls: "mid" };
+  if (pct >= 100) return { key: "completed", cls: "high", colorCls: "st-done" };
+  if (pct <= 0) return { key: "notStarted", cls: "low", colorCls: "st-missing" };
+  return { key: "inProgress", cls: "mid", colorCls: "st-progress" };
 }
 
 function surveyLabel(item) {
@@ -53,22 +53,29 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
   const now = new Date();
   const exportedAt = now.toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
   const dateDisplay = dKey.split("-").reverse().join("/");
+  const nextPlanText = (project.nextDayPlan || {})[dKey] || "";
+  const nextPlanHtml = nextPlanText
+    ? `<div class="report-section next-plan-box">
+        <div class="section-title">${t("nextDayPlan")}</div>
+        <div class="next-plan-text">${escapeHtml(nextPlanText)}</div>
+       </div>`
+    : "";
 
   const rowsHtml = rows.map((r) => {
     const st = statusOf(r.pct);
     return `<tr>
-      <td>${escapeHtml(r.label)}</td>
+      <td><span class="${st.colorCls}">${escapeHtml(r.label)}</span></td>
       <td>${escapeHtml(r.assignee)}</td>
       <td class="num">${r.contract.toLocaleString()} ${escapeHtml(r.unit)}</td>
       <td class="num">${r.today.toLocaleString()} ${escapeHtml(r.unit)}</td>
       <td class="num">${r.total.toLocaleString()} ${escapeHtml(r.unit)}</td>
       <td class="num">${r.pct.toFixed(0)}%</td>
-      <td>${t(st.key)}</td>
+      <td><span class="${st.colorCls}">${t(st.key)}</span></td>
     </tr>`;
   }).join("");
 
   const missingHtml = missing.length
-    ? `<div class="report-section"><div class="section-title">${t("missingItems")}</div><ul class="missing-list">${missing.map((m) => `<li>${escapeHtml(m.label)} — ${m.pct.toFixed(0)}%</li>`).join("")}</ul></div>`
+    ? `<div class="report-section"><div class="section-title">${t("missingItems")}</div><ul class="missing-list">${missing.map((m) => `<li class="st-missing">${escapeHtml(m.label)} — ${m.pct.toFixed(0)}%</li>`).join("")}</ul></div>`
     : "";
 
   const boreholeRows = rows.filter((r) => r.type === "soil");
@@ -143,6 +150,8 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
     ${coordsHtml}
 
     ${project.siteImageUrl ? `<div class="report-section"><div class="section-title">${t("siteImage")}</div><img class="report-photo" src="${project.siteImageUrl}" /></div>` : ""}
+
+    ${nextPlanHtml}
 
     <div class="sign-row">
       <div>

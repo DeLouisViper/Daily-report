@@ -1,5 +1,6 @@
 import {
   auth, onAuthStateChanged, signOut,
+  updatePassword, reauthenticateWithCredential, EmailAuthProvider,
 } from "./firebase.js";
 import {
   getUserDoc, watchUsers, setUserRole,
@@ -752,6 +753,16 @@ function renderSettingsView() {
       </div>
     </div>
     <div class="card">
+      <h3 data-i18n="changePassword"></h3>
+      <div class="field-row">
+        <div class="field"><label data-i18n="currentPassword"></label><input type="password" id="pw_current" autocomplete="current-password" /></div>
+        <div class="field"><label data-i18n="newPassword"></label><input type="password" id="pw_new" minlength="6" autocomplete="new-password" /></div>
+        <div class="field"><label data-i18n="confirmNewPassword"></label><input type="password" id="pw_confirm" minlength="6" autocomplete="new-password" /></div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="pw_save" data-i18n="changePasswordBtn"></button>
+      <p class="error-msg" id="pw_msg"></p>
+    </div>
+    <div class="card">
       <h3 data-i18n="language"></h3>
       <div class="toggle-pill" id="settingsLangPill"><button data-lang="vi">Tiếng Việt</button><button data-lang="en">English</button></div>
     </div>
@@ -762,6 +773,34 @@ function renderSettingsView() {
     ${isAdmin() ? `<div class="card"><h3 data-i18n="users"></h3><div class="table-wrap"><table><thead><tr><th data-i18n="fullName"></th><th data-i18n="email"></th><th data-i18n="role"></th></tr></thead><tbody id="usersBody"></tbody></table></div></div>` : ""}
   `;
   bindTopbar();
+  const pwSaveBtn = document.getElementById("pw_save");
+  const pwMsg = document.getElementById("pw_msg");
+  pwSaveBtn.addEventListener("click", async () => {
+    pwMsg.textContent = "";
+    pwMsg.style.color = "";
+    const current = document.getElementById("pw_current").value;
+    const next = document.getElementById("pw_new").value;
+    const confirm = document.getElementById("pw_confirm").value;
+    if (next.length < 6) { pwMsg.textContent = t("passwordTooShort"); return; }
+    if (next !== confirm) { pwMsg.textContent = t("passwordMismatch"); return; }
+    pwSaveBtn.disabled = true;
+    try {
+      const credential = EmailAuthProvider.credential(auth.currentUser.email, current);
+      await reauthenticateWithCredential(auth.currentUser, credential);
+      await updatePassword(auth.currentUser, next);
+      pwMsg.style.color = "var(--success)";
+      pwMsg.textContent = t("passwordChanged");
+      document.getElementById("pw_current").value = "";
+      document.getElementById("pw_new").value = "";
+      document.getElementById("pw_confirm").value = "";
+    } catch (err) {
+      const code = err.code || "";
+      if (code.includes("wrong-password") || code.includes("invalid-credential")) pwMsg.textContent = t("currentPasswordWrong");
+      else pwMsg.textContent = err.message;
+    } finally {
+      pwSaveBtn.disabled = false;
+    }
+  });
   document.querySelectorAll("#settingsLangPill button").forEach((b) => {
     b.classList.toggle("active", b.dataset.lang === getLang());
     b.addEventListener("click", () => { setLang(b.dataset.lang); navigateTo("settings"); });

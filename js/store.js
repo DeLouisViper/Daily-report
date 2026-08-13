@@ -46,6 +46,14 @@ export async function updateProject(id, data, user, itemLabel) {
 export async function deleteProject(id) {
   await deleteDoc(doc(db, "projects", id));
 }
+// Kế hoạch ngày tiếp theo — lưu theo từng ngày trong 1 map trên chính document dự án.
+export async function updateNextDayPlan(projectId, dKey, text, user) {
+  await updateDoc(doc(db, "projects", projectId), {
+    [`nextDayPlan.${dKey}`]: text,
+    updatedAt: serverTimestamp(),
+  });
+  await logActivity(projectId, user, "updated", `Next day plan (${dKey})`);
+}
 // Ảnh vị trí dự án được nén nhỏ ngay trên trình duyệt và lưu thẳng vào Firestore
 // dưới dạng chuỗi base64 (KHÔNG dùng Firebase Storage, nên không cần nâng cấp gói Blaze).
 export function resizeImageToDataUrl(file, maxWidth = 900, quality = 0.72) {

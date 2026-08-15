@@ -146,9 +146,10 @@ function renderOverview() {
       <div id="analysisBody"><div class="empty-state">…</div></div>
     </div>
     <div id="ovStats" class="grid-cards"></div>
-    <div class="card"><h3 data-i18n="currentProjects"></h3><div id="ovProjects" class="grid-cards"></div></div>`;
+    <div class="card"><h3 data-i18n="currentProjects"></h3><div id="ovProjects" class="grid-cards"></div></div>
+    <div class="card hidden" id="ovCompletedCard"><h3>✓ <span data-i18n="completedCount"></span></h3><div id="ovCompletedProjects" class="grid-cards"></div></div>`;
   bindTopbar();
-  unsubProjects = watchProjects((projects) => {
+  unsubProjects = watchProjects(async (projects) => {
     projectsCache = projects;
     const total = projects.length;
     const soil = projects.filter((p) => p.workTypes?.soil).length;
@@ -159,12 +160,30 @@ function renderOverview() {
       statCard(survey, t("survey")),
     ].join("");
     const list = document.getElementById("ovProjects");
+    const completedCard = document.getElementById("ovCompletedCard");
+    const completedList = document.getElementById("ovCompletedProjects");
     if (!projects.length) {
       list.innerHTML = `<div class="empty-state">${t("noProjects")}</div>`;
+      completedCard.classList.add("hidden");
     } else {
-      list.innerHTML = projects.slice(0, 6).map(projectCardHtml).join("");
+      list.innerHTML = `<div class="empty-state">…</div>`;
+      const summaries = await Promise.all(projects.map(computeProjectSummary));
+      if (!document.getElementById("ovProjects")) return; // view changed while loading
+      const completed = summaries.filter((s) => s.itemsTotal > 0 && s.pctAvg >= 100);
+      const active = summaries.filter((s) => !(s.itemsTotal > 0 && s.pctAvg >= 100)).slice(0, 6);
+
+      list.innerHTML = active.length ? active.map((s) => projectCardHtml(s.project)).join("") : `<div class="empty-state">${t("noProjects")}</div>`;
       bindProjectCards(list);
-      hydrateProjectCards(list, projects.slice(0, 6));
+      active.forEach((s) => applySummaryToCard(list, s));
+
+      if (completed.length) {
+        completedCard.classList.remove("hidden");
+        completedList.innerHTML = completed.map((s) => projectCardHtml(s.project)).join("");
+        bindProjectCards(completedList);
+        completed.forEach((s) => applySummaryToCard(completedList, s));
+      } else {
+        completedCard.classList.add("hidden");
+      }
     }
     renderAnalysis(projects);
   });

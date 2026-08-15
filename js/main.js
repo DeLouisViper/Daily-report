@@ -11,7 +11,7 @@ import {
 } from "./store.js";
 import { applyI18n, getLang, setLang, t } from "./i18n.js";
 import { initTheme, toggleTheme, getTheme, applyTheme } from "./theme.js";
-import { buildReportHTML, buildSummaryText, exportReportToPdf } from "./report.js";
+import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf } from "./report.js";
 
 initTheme();
 applyI18n();
@@ -139,7 +139,13 @@ function bindTopbar() {
 // OVERVIEW
 // ============================================================
 function renderOverview() {
-  mainView.innerHTML = topbarHtml("overview") + `<div id="ovStats" class="grid-cards"></div><div class="card"><h3 data-i18n="currentProjects"></h3><div id="ovProjects" class="grid-cards"></div></div>`;
+  mainView.innerHTML = topbarHtml("overview") + `
+    <div class="card" id="analysisCard">
+      <h3>📊 <span data-i18n="analysisTitle"></span></h3>
+      <div id="analysisBody"><div class="empty-state">…</div></div>
+    </div>
+    <div id="ovStats" class="grid-cards"></div>
+    <div class="card"><h3 data-i18n="currentProjects"></h3><div id="ovProjects" class="grid-cards"></div></div>`;
   bindTopbar();
   unsubProjects = watchProjects((projects) => {
     projectsCache = projects;
@@ -154,11 +160,74 @@ function renderOverview() {
     const list = document.getElementById("ovProjects");
     if (!projects.length) {
       list.innerHTML = `<div class="empty-state">${t("noProjects")}</div>`;
-      return;
+    } else {
+      list.innerHTML = projects.slice(0, 6).map(projectCardHtml).join("");
+      bindProjectCards(list);
     }
-    list.innerHTML = projects.slice(0, 6).map(projectCardHtml).join("");
-    bindProjectCards(list);
+    renderAnalysis(projects);
   });
+}
+async function computeProjectSummary(project) {
+  const [boreholes, surveyItems] = await Promise.all([
+    oneOff(watchBoreholes, project.id),
+    oneOff(watchSurveyItems, project.id),
+  ]);
+  const rows = buildReportRows(project, boreholes, surveyItems, dateKey());
+  const itemsTotal = rows.length;
+  const itemsDone = rows.filter((r) => r.pct >= 100).length;
+  const pctAvg = itemsTotal ? rows.reduce((a, r) => a + r.pct, 0) / itemsTotal : 0;
+  return { project, itemsTotal, itemsDone, pctAvg };
+}
+async function renderAnalysis(projects) {
+  const body = document.getElementById("analysisBody");
+  if (!body) return;
+  if (!projects.length) { body.innerHTML = `<div class="empty-state">${t("noProjects")}</div>`; return; }
+  const summaries = await Promise.all(projects.map(computeProjectSummary));
+  if (!document.getElementById("analysisBody")) return; // view changed while loading
+
+  const totalProjects = summaries.length;
+  const avgProgress = totalProjects ? summaries.reduce((a, s) => a + s.pctAvg, 0) / totalProjects : 0;
+  const completed = summaries.filter((s) => s.itemsTotal > 0 && s.pctAvg >= 100).length;
+  const notStarted = summaries.filter((s) => s.pctAvg <= 0).length;
+  const inProgress = totalProjects - completed - notStarted;
+  const itemsTotalSum = summaries.reduce((a, s) => a + s.itemsTotal, 0);
+  const itemsDoneSum = summaries.reduce((a, s) => a + s.itemsDone, 0);
+
+  const attention = [...summaries].sort((a, b) => a.pctAvg - b.pctAvg).slice(0, 5);
+
+  const byManager = {};
+  summaries.forEach((s) => {
+    const key = s.project.manager || s.project.siteEngineer || s.project.createdByName || "—";
+    byManager[key] = (byManager[key] || 0) + 1;
+  });
+
+  body.innerHTML = `
+    <div class="analysis-grid">
+      ${statMini(totalProjects, t("totalProjects"))}
+      ${statMini(avgProgress.toFixed(0) + "%", t("avgProgress"), "#f5a623")}
+      ${statMini(completed, t("completedCount"), "var(--success)")}
+      ${statMini(inProgress, t("inProgressCount"))}
+      ${statMini(notStarted, t("notStartedCount"), "var(--danger)")}
+      ${statMini(`${itemsDoneSum}/${itemsTotalSum}`, t("itemsSystemWide"))}
+    </div>
+    <div class="analysis-sub-title">⚠️ <span>${t("attentionProjects")}</span></div>
+    <div class="chip-row">
+      ${attention.length ? attention.map((s) => `<span class="chip chip-alert" data-pid="${s.project.id}">${escapeHtml(s.project.name)} — ${s.pctAvg.toFixed(0)}%</span>`).join("") : `<span class="chip">—</span>`}
+    </div>
+    <div class="analysis-sub-title">👤 <span>${t("projectsByManager")}</span></div>
+    <div class="chip-row">
+      ${Object.entries(byManager).map(([name, count]) => `<span class="chip">${escapeHtml(name)}: ${count}</span>`).join("")}
+    </div>
+  `;
+  body.querySelectorAll(".chip-alert").forEach((el) => {
+    el.addEventListener("click", () => navigateTo("project-detail", el.dataset.pid));
+  });
+}
+function statMini(value, label, color) {
+  return `<div class="analysis-stat">
+    <div class="val" style="${color ? `color:${color};` : ""}">${value}</div>
+    <div class="lbl">${label}</div>
+  </div>`;
 }
 function statCard(value, label) {
   return `<div class="card" style="text-align:center;">
@@ -730,26 +799,46 @@ function oneOff(watchFn, id) {
 // ACTIVITY LOG VIEW
 // ============================================================
 function renderActivityView() {
-  mainView.innerHTML = topbarHtml("activityLog", `<select id="al_project" style="min-width:220px;"></select>`) + `<div class="card"><div class="table-wrap"><table id="al_table"><thead><tr><th data-i18n="time"></th><th data-i18n="user"></th><th data-i18n="activity"></th></tr></thead><tbody id="al_body"></tbody></table></div></div>`;
+  const extraControls = `
+    <select id="al_project" style="min-width:200px;"></select>
+    <select id="al_user" style="min-width:180px;"></select>`;
+  mainView.innerHTML = topbarHtml("activityLog", extraControls) + `<div class="card"><div class="table-wrap"><table id="al_table" class="table-divided"><thead><tr><th>${t("timeCol")}</th><th data-i18n="user"></th><th data-i18n="activity"></th></tr></thead><tbody id="al_body"></tbody></table></div></div>`;
   bindTopbar();
   const sel = document.getElementById("al_project");
+  const userSel = document.getElementById("al_user");
+  let currentActivities = [];
+
   function fill() {
     sel.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+  }
+  function renderRows() {
+    const body = document.getElementById("al_body");
+    if (!body) return;
+    const filterUser = userSel.value;
+    const filtered = filterUser ? currentActivities.filter((a) => (a.userName || "") === filterUser) : currentActivities;
+    if (!filtered.length) { body.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-dim);">—</td></tr>`; return; }
+    body.innerHTML = filtered.map((a) => {
+      const time = a.ts?.toDate ? a.ts.toDate().toLocaleString(getLang() === "vi" ? "vi-VN" : "en-US") : "—";
+      return `<tr><td>${time}</td><td>${escapeHtml(a.userName || "")}</td><td>${escapeHtml(a.userName || "")} ${t("action_" + (a.action || "updated"))}: ${escapeHtml(a.itemLabel || "")}</td></tr>`;
+    }).join("");
+  }
+  function fillUserFilter() {
+    const names = [...new Set(currentActivities.map((a) => a.userName).filter(Boolean))].sort();
+    const prev = userSel.value;
+    userSel.innerHTML = `<option value="">${t("allUsers")}</option>` + names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+    if (names.includes(prev)) userSel.value = prev;
   }
   function load(pid) {
     if (!pid) return;
     const unsub = watchActivity(pid, (activities) => {
-      const body = document.getElementById("al_body");
-      if (!body) return;
-      if (!activities.length) { body.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-dim);">—</td></tr>`; return; }
-      body.innerHTML = activities.map((a) => {
-        const time = a.ts?.toDate ? a.ts.toDate().toLocaleString(getLang() === "vi" ? "vi-VN" : "en-US") : "—";
-        return `<tr><td>${time}</td><td>${escapeHtml(a.userName || "")}</td><td>${escapeHtml(a.userName || "")} ${t("action_" + (a.action || "updated"))}: ${escapeHtml(a.itemLabel || "")}</td></tr>`;
-      }).join("");
+      currentActivities = activities;
+      fillUserFilter();
+      renderRows();
     });
     currentProjectUnsubs.push(unsub);
   }
-  sel.addEventListener("change", () => { cleanupProjectWatchers(); load(sel.value); });
+  sel.addEventListener("change", () => { cleanupProjectWatchers(); currentActivities = []; load(sel.value); });
+  userSel.addEventListener("change", renderRows);
   if (projectsCache.length) { fill(); load(sel.value); }
   else {
     const unsub = watchProjects((projects) => { projectsCache = projects; fill(); load(sel.value); });

@@ -164,7 +164,7 @@ function renderOverview() {
     } else {
       list.innerHTML = projects.slice(0, 6).map(projectCardHtml).join("");
       bindProjectCards(list);
-      annotateCompletedBadges(list, projects.slice(0, 6));
+      hydrateProjectCards(list, projects.slice(0, 6));
     }
     renderAnalysis(projects);
   });
@@ -178,7 +178,7 @@ async function computeProjectSummary(project) {
   const itemsTotal = rows.length;
   const itemsDone = rows.filter((r) => r.pct >= 100).length;
   const pctAvg = itemsTotal ? rows.reduce((a, r) => a + r.pct, 0) / itemsTotal : 0;
-  return { project, itemsTotal, itemsDone, pctAvg };
+  return { project, itemsTotal, itemsDone, pctAvg, rows };
 }
 async function renderAnalysis(projects) {
   const body = document.getElementById("analysisBody");
@@ -256,7 +256,7 @@ function renderProjectsList() {
     }
     list.innerHTML = projects.map(projectCardHtml).join("");
     bindProjectCards(list);
-    annotateCompletedBadges(list, projects);
+    hydrateProjectCards(list, projects);
   });
 }
 function projectCardHtml(p) {
@@ -264,34 +264,65 @@ function projectCardHtml(p) {
     p.workTypes?.soil ? `<span class="tag">${t("soilInvestigation")}</span>` : "",
     p.workTypes?.survey ? `<span class="tag">${t("survey")}</span>` : "",
   ].join("");
-  const pct = p._pct ?? 0;
   const thumb = p.siteImageUrl ? `style="background-image:url('${p.siteImageUrl}')"` : "";
+  const dateRaw = p.startDateSite || (p.createdAt?.toDate ? p.createdAt.toDate().toISOString().slice(0, 10) : "");
+  const dateDisplay = dateRaw ? dateRaw.split("-").reverse().join("/") : "—";
+  const manager = p.manager || p.siteEngineer || "—";
   return `<div class="project-card" data-id="${p.id}">
     <div class="thumb" ${thumb}>${p.siteImageUrl ? "" : "📍"}</div>
     <div class="body">
-      <h4>${escapeHtml(p.name || "—")}</h4>
-      <div class="loc">${escapeHtml(p.location || "—")}</div>
+      <div class="pc-head">
+        <div>
+          <h4>${escapeHtml(p.name || "—")}</h4>
+          <div class="pc-date">📅 ${dateDisplay}</div>
+        </div>
+        <div class="pc-ring" style="--pct:0;"><span>…</span></div>
+      </div>
+      <div class="pc-manager">👤 ${t("managerShort")}: <b>${escapeHtml(manager)}</b></div>
       ${tags ? `<div class="tag-row">${tags}</div>` : ""}
+      <div class="progress-bar pc-progress-bar"><div style="width:0%"></div></div>
+      <div class="chip-row pc-items"></div>
     </div>
   </div>`;
 }
-async function annotateCompletedBadges(container, projects) {
+async function hydrateProjectCards(container, projects) {
   const summaries = await Promise.all(projects.map(computeProjectSummary));
   if (!document.body.contains(container)) return; // view changed while loading
   summaries.forEach((s) => {
-    if (!(s.itemsTotal > 0 && s.pctAvg >= 100)) return;
     const card = container.querySelector(`.project-card[data-id="${s.project.id}"]`);
     if (!card) return;
-    let tagRow = card.querySelector(".tag-row");
-    if (!tagRow) {
-      tagRow = document.createElement("div");
-      tagRow.className = "tag-row";
-      card.querySelector(".body").appendChild(tagRow);
+    const pct = Math.round(s.pctAvg);
+
+    const ring = card.querySelector(".pc-ring");
+    if (ring) {
+      ring.style.setProperty("--pct", pct);
+      ring.querySelector("span").textContent = pct + "%";
     }
-    const badge = document.createElement("span");
-    badge.className = "tag tag-completed";
-    badge.textContent = "✓ " + t("projectCompleted");
-    tagRow.appendChild(badge);
+    const bar = card.querySelector(".pc-progress-bar > div");
+    if (bar) bar.style.width = pct + "%";
+
+    const itemsWrap = card.querySelector(".pc-items");
+    if (itemsWrap) {
+      const maxShow = 4;
+      const shown = s.rows.slice(0, maxShow);
+      const rest = s.rows.length - shown.length;
+      itemsWrap.innerHTML = shown.length
+        ? shown.map((r) => `<span class="chip pc-chip">${escapeHtml(r.label)}</span>`).join("") + (rest > 0 ? `<span class="chip pc-chip">+${rest}</span>` : "")
+        : `<span class="chip pc-chip">—</span>`;
+    }
+
+    if (s.itemsTotal > 0 && pct >= 100) {
+      let tagRow = card.querySelector(".tag-row");
+      if (!tagRow) {
+        tagRow = document.createElement("div");
+        tagRow.className = "tag-row";
+        card.querySelector(".pc-manager").insertAdjacentElement("afterend", tagRow);
+      }
+      const badge = document.createElement("span");
+      badge.className = "tag tag-completed";
+      badge.textContent = "✓ " + t("projectCompleted");
+      tagRow.appendChild(badge);
+    }
   });
 }
 function bindProjectCards(container) {

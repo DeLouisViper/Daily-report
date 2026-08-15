@@ -46,6 +46,39 @@ export async function updateProject(id, data, user, itemLabel) {
 export async function deleteProject(id) {
   await deleteDoc(doc(db, "projects", id));
 }
+// Xuất/Nhập dự án dạng JSON — gồm thông tin dự án + toàn bộ hố khoan + hạng mục khảo sát.
+export async function getProjectFullData(projectId) {
+  const project = await getProject(projectId);
+  const [bhSnap, svSnap] = await Promise.all([
+    getDocs(collection(db, "projects", projectId, "boreholes")),
+    getDocs(collection(db, "projects", projectId, "surveyItems")),
+  ]);
+  const boreholes = bhSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const surveyItems = svSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return { project, boreholes, surveyItems };
+}
+export async function importProjectFullData(data, user) {
+  const src = data.project || {};
+  const projectData = { ...src };
+  delete projectData.id;
+  delete projectData.createdAt;
+  delete projectData.updatedAt;
+  delete projectData.createdBy;
+  delete projectData.createdByName;
+  const newId = await createProject(projectData, user);
+  for (const b of data.boreholes || []) {
+    const bd = { ...b };
+    delete bd.id; delete bd.createdAt; delete bd.updatedAt;
+    await addDoc(collection(db, "projects", newId, "boreholes"), { ...bd, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  }
+  for (const s of data.surveyItems || []) {
+    const sd = { ...s };
+    delete sd.id; delete sd.createdAt; delete sd.updatedAt;
+    await addDoc(collection(db, "projects", newId, "surveyItems"), { ...sd, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  }
+  await logActivity(newId, user, "created", `${projectData.name || "project"} (imported)`);
+  return newId;
+}
 // Kế hoạch ngày tiếp theo — lưu theo từng ngày trong 1 map trên chính document dự án.
 export async function updateNextDayPlan(projectId, dKey, text, user) {
   await updateDoc(doc(db, "projects", projectId), {

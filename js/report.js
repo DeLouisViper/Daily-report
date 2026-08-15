@@ -236,7 +236,7 @@ export async function exportReportToPdf(elementId, filename) {
     });
     breakpoints.push(elRect.height);
 
-    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
     const totalPages = breakpoints.length - 1;
 
     for (let i = 0; i < totalPages; i++) {
@@ -252,11 +252,13 @@ export async function exportReportToPdf(elementId, filename) {
       ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
       ctx.drawImage(canvas, 0, sliceTopPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
 
-      const imgData = sliceCanvas.toDataURL("image/png");
+      // JPEG at high quality keeps the page looking identical while producing a
+      // file many times smaller than PNG — important for sharing over chat apps.
+      const imgData = sliceCanvas.toDataURL("image/jpeg", 0.92);
       const sliceHeightMm = sliceHeightPx / pxPerCssPx / pxPerMm;
 
       if (i > 0) pdf.addPage();
-      pdf.addImage(imgData, "PNG", 0, marginTopMm, pageWidthMm, sliceHeightMm);
+      pdf.addImage(imgData, "JPEG", 0, marginTopMm, pageWidthMm, sliceHeightMm, undefined, "MEDIUM");
 
       if (totalPages > 1) {
         pdf.setFontSize(8);
@@ -265,10 +267,31 @@ export async function exportReportToPdf(elementId, filename) {
       }
     }
 
-    pdf.save(filename);
+    // Manually trigger the download (instead of jsPDF's built-in .save()) so the
+    // chosen filename is reliably applied across mobile browsers/in-app browsers.
+    const blob = pdf.output("blob");
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
   } finally {
     document.body.removeChild(el);
   }
+}
+
+// Chuyển tên dự án có dấu tiếng Việt thành tên file gọn, không dấu, dễ đọc
+// (ví dụ "Dự án Cầu KT10" -> "Du_an_Cau_KT10"), thay vì xóa sạch mọi chữ có dấu.
+export function slugify(str) {
+  return String(str || "")
+    .replace(/đ/g, "d").replace(/Đ/g, "D")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 60) || "report";
 }
 
 function escapeHtml(str) {

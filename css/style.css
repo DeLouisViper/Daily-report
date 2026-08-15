@@ -192,6 +192,19 @@ label { font-size: 12.5px; color: var(--text-dim); display: block; margin-bottom
 .tag-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .tag { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 3px 8px; border-radius: 20px; background: var(--bg-elev-2); color: var(--text-dim); border: 1px solid var(--border); }
 
+.analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.analysis-stat { background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.analysis-stat .val { font-size: 22px; font-weight: 800; }
+.analysis-stat .lbl { font-size: 11.5px; color: var(--text-dim); margin-top: 4px; }
+.analysis-sub-title { font-size: 13px; font-weight: 700; margin: 14px 0 8px; display: flex; align-items: center; gap: 6px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: 20px; padding: 6px 12px; font-size: 12.5px; }
+.chip-alert { border: 1.5px solid var(--danger); cursor: pointer; box-shadow: 0 0 6px rgba(255,0,85,.5), 0 0 14px rgba(255,0,85,.3); transition: box-shadow .15s; }
+.chip-alert:hover { box-shadow: 0 0 10px rgba(255,0,85,.75), 0 0 22px rgba(255,0,85,.45); }
+
+.table-divided th, .table-divided td { border-right: 1px solid var(--border); }
+.table-divided th:last-child, .table-divided td:last-child { border-right: none; }
+
 .empty-state { text-align: center; padding: 60px 20px; color: var(--text-dim); }
 
 table { width: 100%; border-collapse: collapse; font-size: 13.5px; }

@@ -191,7 +191,9 @@ label { font-size: 12.5px; color: var(--text-dim); display: block; margin-bottom
 .pc-ring {
   --pct: 0;
   width: 42px; height: 42px; flex: 0 0 42px; border-radius: 50%;
-  background: conic-gradient(var(--accent-red) calc(var(--pct) * 1% * 0.5), var(--accent) calc(var(--pct) * 1%), var(--bg-elev-2) 0);
+  background:
+    conic-gradient(transparent 0% calc(var(--pct) * 1%), var(--bg-elev-2) calc(var(--pct) * 1%) 100%),
+    conic-gradient(from 0deg, #ff0055 0%, #b000ff 25%, #00a8ff 50%, #b000ff 75%, #ff0055 100%);
   display: grid; place-items: center; position: relative;
 }
 .pc-ring::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--bg-elev); }

@@ -267,17 +267,32 @@ export async function exportReportToPdf(elementId, filename) {
       }
     }
 
-    // Manually trigger the download (instead of jsPDF's built-in .save()) so the
-    // chosen filename is reliably applied across mobile browsers/in-app browsers.
+    // Deliver the file. On mobile, sharing a blob: URL via an <a download> link
+    // makes Safari's share sheet split it into "1 document + 1 link" (2 separate
+    // files land in the chat app). The Web Share API with a real File avoids that
+    // entirely — it hands over just the file, with the correct name, natively.
     const blob = pdf.output("blob");
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+    const file = new File([blob], filename, { type: "application/pdf" });
+    let delivered = false;
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: filename });
+        delivered = true;
+      } catch (shareErr) {
+        // User cancelled the share sheet, or share failed — fall back to a normal download.
+        delivered = shareErr && shareErr.name === "AbortError";
+      }
+    }
+    if (!delivered) {
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+    }
   } finally {
     document.body.removeChild(el);
   }

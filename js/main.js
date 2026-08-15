@@ -5,13 +5,14 @@ import {
 import {
   getUserDoc, watchUsers, setUserRole,
   watchProjects, getProject, createProject, updateProject, deleteProject, resizeImageToDataUrl, updateNextDayPlan,
+  getProjectFullData, importProjectFullData,
   watchBoreholes, addBorehole, updateBorehole, deleteBorehole,
   watchSurveyItems, addSurveyItem, updateSurveyItem, deleteSurveyItem,
   watchActivity, dateKey, sumDailyLog,
 } from "./store.js";
 import { applyI18n, getLang, setLang, t } from "./i18n.js";
 import { initTheme, toggleTheme, getTheme, applyTheme } from "./theme.js";
-import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf } from "./report.js";
+import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, slugify } from "./report.js";
 
 initTheme();
 applyI18n();
@@ -163,6 +164,7 @@ function renderOverview() {
     } else {
       list.innerHTML = projects.slice(0, 6).map(projectCardHtml).join("");
       bindProjectCards(list);
+      annotateCompletedBadges(list, projects.slice(0, 6));
     }
     renderAnalysis(projects);
   });
@@ -193,7 +195,7 @@ async function renderAnalysis(projects) {
   const itemsTotalSum = summaries.reduce((a, s) => a + s.itemsTotal, 0);
   const itemsDoneSum = summaries.reduce((a, s) => a + s.itemsDone, 0);
 
-  const attention = [...summaries].sort((a, b) => a.pctAvg - b.pctAvg).slice(0, 5);
+  const attention = [...summaries].filter((s) => s.pctAvg < 100).sort((a, b) => a.pctAvg - b.pctAvg).slice(0, 5);
 
   const byManager = {};
   summaries.forEach((s) => {
@@ -254,6 +256,7 @@ function renderProjectsList() {
     }
     list.innerHTML = projects.map(projectCardHtml).join("");
     bindProjectCards(list);
+    annotateCompletedBadges(list, projects);
   });
 }
 function projectCardHtml(p) {
@@ -271,6 +274,25 @@ function projectCardHtml(p) {
       ${tags ? `<div class="tag-row">${tags}</div>` : ""}
     </div>
   </div>`;
+}
+async function annotateCompletedBadges(container, projects) {
+  const summaries = await Promise.all(projects.map(computeProjectSummary));
+  if (!document.body.contains(container)) return; // view changed while loading
+  summaries.forEach((s) => {
+    if (!(s.itemsTotal > 0 && s.pctAvg >= 100)) return;
+    const card = container.querySelector(`.project-card[data-id="${s.project.id}"]`);
+    if (!card) return;
+    let tagRow = card.querySelector(".tag-row");
+    if (!tagRow) {
+      tagRow = document.createElement("div");
+      tagRow.className = "tag-row";
+      card.querySelector(".body").appendChild(tagRow);
+    }
+    const badge = document.createElement("span");
+    badge.className = "tag tag-completed";
+    badge.textContent = "✓ " + t("projectCompleted");
+    tagRow.appendChild(badge);
+  });
 }
 function bindProjectCards(container) {
   container.querySelectorAll(".project-card").forEach((c) => {
@@ -762,8 +784,8 @@ function renderReportView(preselectedProjectId) {
     const orig = btn.textContent;
     btn.textContent = "…";
     try {
-      const name = (window.__reportCtx?.project?.name || "report").replace(/[^a-z0-9]+/gi, "_");
-      await exportReportToPdf("reportPrintArea", `${name}_${window.__reportCtx?.dKey}.pdf`);
+      const name = slugify(window.__reportCtx?.project?.name);
+      await exportReportToPdf("reportPrintArea", `${name}_${dateKey()}.pdf`);
     } finally {
       btn.disabled = false;
       btn.textContent = orig;
@@ -800,12 +822,14 @@ function oneOff(watchFn, id) {
 // ============================================================
 function renderActivityView() {
   const extraControls = `
+    <input type="search" id="al_search" placeholder="${t('searchActivity')}" style="min-width:200px;" data-i18n-placeholder="searchActivity" />
     <select id="al_project" style="min-width:200px;"></select>
     <select id="al_user" style="min-width:180px;"></select>`;
   mainView.innerHTML = topbarHtml("activityLog", extraControls) + `<div class="card"><div class="table-wrap"><table id="al_table" class="table-divided"><thead><tr><th>${t("timeCol")}</th><th data-i18n="user"></th><th data-i18n="activity"></th></tr></thead><tbody id="al_body"></tbody></table></div></div>`;
   bindTopbar();
   const sel = document.getElementById("al_project");
   const userSel = document.getElementById("al_user");
+  const searchEl = document.getElementById("al_search");
   let currentActivities = [];
 
   function fill() {
@@ -815,7 +839,15 @@ function renderActivityView() {
     const body = document.getElementById("al_body");
     if (!body) return;
     const filterUser = userSel.value;
-    const filtered = filterUser ? currentActivities.filter((a) => (a.userName || "") === filterUser) : currentActivities;
+    const q = searchEl.value.trim().toLowerCase();
+    let filtered = filterUser ? currentActivities.filter((a) => (a.userName || "") === filterUser) : currentActivities;
+    if (q) {
+      filtered = filtered.filter((a) =>
+        (a.userName || "").toLowerCase().includes(q) ||
+        (a.itemLabel || "").toLowerCase().includes(q) ||
+        t("action_" + (a.action || "updated")).toLowerCase().includes(q)
+      );
+    }
     if (!filtered.length) { body.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-dim);">—</td></tr>`; return; }
     body.innerHTML = filtered.map((a) => {
       const time = a.ts?.toDate ? a.ts.toDate().toLocaleString(getLang() === "vi" ? "vi-VN" : "en-US") : "—";
@@ -837,6 +869,7 @@ function renderActivityView() {
     });
     currentProjectUnsubs.push(unsub);
   }
+  searchEl.addEventListener("input", renderRows);
   sel.addEventListener("change", () => { cleanupProjectWatchers(); currentActivities = []; load(sel.value); });
   userSel.addEventListener("change", renderRows);
   if (projectsCache.length) { fill(); load(sel.value); }
@@ -870,6 +903,26 @@ function renderSettingsView() {
       <p class="error-msg" id="pw_msg"></p>
     </div>
     <div class="card">
+      <h3 data-i18n="backupTitle"></h3>
+      <div class="field-row">
+        <div class="field">
+          <label data-i18n="selectProject"></label>
+          <select id="bk_project"></select>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="bk_export" data-i18n="exportJson"></button>
+      <p class="error-msg" id="bk_exportMsg"></p>
+      ${canEdit() ? `
+        <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;" />
+        <div class="field">
+          <label data-i18n="importJson"></label>
+          <input type="file" id="bk_importFile" accept="application/json" />
+        </div>
+        <button class="btn btn-primary btn-sm" id="bk_import" data-i18n="importJsonBtn"></button>
+        <p class="error-msg" id="bk_importMsg"></p>
+      ` : ""}
+    </div>
+    <div class="card">
       <h3 data-i18n="language"></h3>
       <div class="toggle-pill" id="settingsLangPill"><button data-lang="vi">Tiếng Việt</button><button data-lang="en">English</button></div>
     </div>
@@ -880,6 +933,62 @@ function renderSettingsView() {
     ${isAdmin() ? `<div class="card"><h3 data-i18n="users"></h3><div class="table-wrap"><table><thead><tr><th data-i18n="fullName"></th><th data-i18n="email"></th><th data-i18n="role"></th></tr></thead><tbody id="usersBody"></tbody></table></div></div>` : ""}
   `;
   bindTopbar();
+  const bkProjectSel = document.getElementById("bk_project");
+  bkProjectSel.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+  if (!projectsCache.length) {
+    const unsub = watchProjects((projects) => {
+      projectsCache = projects;
+      bkProjectSel.innerHTML = projects.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+    });
+    currentProjectUnsubs.push(unsub);
+  }
+  document.getElementById("bk_export").addEventListener("click", async () => {
+    const msg = document.getElementById("bk_exportMsg");
+    msg.style.color = "";
+    const pid = bkProjectSel.value;
+    if (!pid) return;
+    try {
+      const data = await getProjectFullData(pid);
+      const jsonStr = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${slugify(data.project?.name)}_backup.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err) {
+      msg.textContent = err.message;
+    }
+  });
+  const importBtn = document.getElementById("bk_import");
+  if (importBtn) {
+    importBtn.addEventListener("click", async () => {
+      const msg = document.getElementById("bk_importMsg");
+      msg.style.color = "";
+      msg.textContent = "";
+      const fileInput = document.getElementById("bk_importFile");
+      const file = fileInput.files[0];
+      if (!file) { msg.textContent = t("selectFileFirst"); return; }
+      importBtn.disabled = true;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (!data.project || !data.project.name) throw new Error(t("invalidJsonFile"));
+        const newId = await importProjectFullData(data, CURRENT_USER);
+        msg.style.color = "var(--success)";
+        msg.textContent = t("importSuccess");
+        fileInput.value = "";
+        navigateTo("project-detail", newId);
+      } catch (err) {
+        msg.textContent = err.message;
+      } finally {
+        importBtn.disabled = false;
+      }
+    });
+  }
   const pwSaveBtn = document.getElementById("pw_save");
   const pwMsg = document.getElementById("pw_msg");
   pwSaveBtn.addEventListener("click", async () => {

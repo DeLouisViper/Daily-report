@@ -217,6 +217,9 @@ label { font-size: 12.5px; color: var(--text-dim); display: block; margin-bottom
 .chip-alert { border: 1.5px solid var(--danger); cursor: pointer; box-shadow: 0 0 6px rgba(255,0,85,.5), 0 0 14px rgba(255,0,85,.3); transition: box-shadow .15s; }
 .chip-alert:hover { box-shadow: 0 0 10px rgba(255,0,85,.75), 0 0 22px rgba(255,0,85,.45); }
 .tag-completed { border: 1.5px solid var(--success); color: var(--success); box-shadow: 0 0 6px rgba(0,255,136,.5), 0 0 14px rgba(0,255,136,.3); }
+.tag-soil { border: 1.5px solid #00e5ff; color: #00e5ff; box-shadow: 0 0 6px rgba(0,229,255,.5), 0 0 14px rgba(0,229,255,.3); }
+.tag-survey { border: 1.5px solid #ff2d95; color: #ff2d95; box-shadow: 0 0 6px rgba(255,45,149,.5), 0 0 14px rgba(255,45,149,.3); }
+.tag-inprogress { border: 1.5px solid #ffd400; color: #ffd400; box-shadow: 0 0 6px rgba(255,212,0,.5), 0 0 14px rgba(255,212,0,.3); }
 
 .table-divided th, .table-divided td { border-right: 1px solid var(--border); }
 .table-divided th:last-child, .table-divided td:last-child { border-right: none; }

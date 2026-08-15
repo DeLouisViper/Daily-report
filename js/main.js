@@ -243,26 +243,53 @@ function statCard(value, label) {
 // ============================================================
 function renderProjectsList() {
   const canCreateBtn = canEdit() ? `<button class="btn btn-primary btn-sm" id="newProjectBtn" data-i18n="newProject"></button>` : "";
-  mainView.innerHTML = topbarHtml("currentProjects", canCreateBtn) + `<div id="projList" class="grid-cards"></div>`;
+  mainView.innerHTML = topbarHtml("currentProjects", canCreateBtn) + `
+    <div class="tabs" id="projTabs">
+      <button class="tab-btn active" data-tab="active">${t("inProgress")}</button>
+      <button class="tab-btn" data-tab="completed">${t("completedCount")}</button>
+    </div>
+    <div id="projActiveList" class="grid-cards"></div>
+    <div id="projCompletedList" class="grid-cards hidden"></div>
+  `;
   bindTopbar();
   const btn = document.getElementById("newProjectBtn");
   if (btn) btn.addEventListener("click", () => openProjectModal());
-  unsubProjects = watchProjects((projects) => {
+
+  const tabs = document.querySelectorAll("#projTabs .tab-btn");
+  const activeList = document.getElementById("projActiveList");
+  const completedList = document.getElementById("projCompletedList");
+  tabs.forEach((b) => b.addEventListener("click", () => {
+    tabs.forEach((x) => x.classList.toggle("active", x === b));
+    activeList.classList.toggle("hidden", b.dataset.tab !== "active");
+    completedList.classList.toggle("hidden", b.dataset.tab !== "completed");
+  }));
+
+  unsubProjects = watchProjects(async (projects) => {
     projectsCache = projects;
-    const list = document.getElementById("projList");
     if (!projects.length) {
-      list.innerHTML = `<div class="empty-state">${t("noProjects")}</div>`;
+      activeList.innerHTML = `<div class="empty-state">${t("noProjects")}</div>`;
+      completedList.innerHTML = "";
       return;
     }
-    list.innerHTML = projects.map(projectCardHtml).join("");
-    bindProjectCards(list);
-    hydrateProjectCards(list, projects);
+    activeList.innerHTML = `<div class="empty-state">…</div>`;
+    const summaries = await Promise.all(projects.map(computeProjectSummary));
+    if (!document.getElementById("projActiveList")) return; // view changed while loading
+
+    const completed = summaries.filter((s) => s.itemsTotal > 0 && s.pctAvg >= 100);
+    const active = summaries.filter((s) => !(s.itemsTotal > 0 && s.pctAvg >= 100));
+
+    activeList.innerHTML = active.length ? active.map((s) => projectCardHtml(s.project)).join("") : `<div class="empty-state">${t("noProjects")}</div>`;
+    completedList.innerHTML = completed.length ? completed.map((s) => projectCardHtml(s.project)).join("") : `<div class="empty-state">${t("noProjects")}</div>`;
+    bindProjectCards(activeList);
+    bindProjectCards(completedList);
+    active.forEach((s) => applySummaryToCard(activeList, s));
+    completed.forEach((s) => applySummaryToCard(completedList, s));
   });
 }
 function projectCardHtml(p) {
   const tags = [
-    p.workTypes?.soil ? `<span class="tag">${t("soilInvestigation")}</span>` : "",
-    p.workTypes?.survey ? `<span class="tag">${t("survey")}</span>` : "",
+    p.workTypes?.soil ? `<span class="tag tag-soil">${t("soilInvestigation")}</span>` : "",
+    p.workTypes?.survey ? `<span class="tag tag-survey">${t("survey")}</span>` : "",
   ].join("");
   const thumb = p.siteImageUrl ? `style="background-image:url('${p.siteImageUrl}')"` : "";
   const dateRaw = p.startDateSite || (p.createdAt?.toDate ? p.createdAt.toDate().toISOString().slice(0, 10) : "");
@@ -285,45 +312,52 @@ function projectCardHtml(p) {
     </div>
   </div>`;
 }
-async function hydrateProjectCards(container, projects) {
-  const summaries = await Promise.all(projects.map(computeProjectSummary));
-  if (!document.body.contains(container)) return; // view changed while loading
-  summaries.forEach((s) => {
-    const card = container.querySelector(`.project-card[data-id="${s.project.id}"]`);
-    if (!card) return;
-    const pct = Math.round(s.pctAvg);
+function applySummaryToCard(container, s) {
+  const card = container.querySelector(`.project-card[data-id="${s.project.id}"]`);
+  if (!card) return;
+  const pct = Math.round(s.pctAvg);
 
-    const ring = card.querySelector(".pc-ring");
-    if (ring) {
-      ring.style.setProperty("--pct", pct);
-      ring.querySelector("span").textContent = pct + "%";
+  const ring = card.querySelector(".pc-ring");
+  if (ring) {
+    ring.style.setProperty("--pct", pct);
+    ring.querySelector("span").textContent = pct + "%";
+  }
+  const bar = card.querySelector(".pc-progress-bar > div");
+  if (bar) bar.style.width = pct + "%";
+
+  const itemsWrap = card.querySelector(".pc-items");
+  if (itemsWrap) {
+    const maxShow = 4;
+    const shown = s.rows.slice(0, maxShow);
+    const rest = s.rows.length - shown.length;
+    itemsWrap.innerHTML = shown.length
+      ? shown.map((r) => `<span class="chip pc-chip">${escapeHtml(r.label)}</span>`).join("") + (rest > 0 ? `<span class="chip pc-chip">+${rest}</span>` : "")
+      : `<span class="chip pc-chip">—</span>`;
+  }
+
+  if (s.itemsTotal > 0) {
+    let tagRow = card.querySelector(".tag-row");
+    if (!tagRow) {
+      tagRow = document.createElement("div");
+      tagRow.className = "tag-row";
+      card.querySelector(".pc-manager").insertAdjacentElement("afterend", tagRow);
     }
-    const bar = card.querySelector(".pc-progress-bar > div");
-    if (bar) bar.style.width = pct + "%";
-
-    const itemsWrap = card.querySelector(".pc-items");
-    if (itemsWrap) {
-      const maxShow = 4;
-      const shown = s.rows.slice(0, maxShow);
-      const rest = s.rows.length - shown.length;
-      itemsWrap.innerHTML = shown.length
-        ? shown.map((r) => `<span class="chip pc-chip">${escapeHtml(r.label)}</span>`).join("") + (rest > 0 ? `<span class="chip pc-chip">+${rest}</span>` : "")
-        : `<span class="chip pc-chip">—</span>`;
-    }
-
-    if (s.itemsTotal > 0 && pct >= 100) {
-      let tagRow = card.querySelector(".tag-row");
-      if (!tagRow) {
-        tagRow = document.createElement("div");
-        tagRow.className = "tag-row";
-        card.querySelector(".pc-manager").insertAdjacentElement("afterend", tagRow);
-      }
-      const badge = document.createElement("span");
+    const badge = document.createElement("span");
+    if (pct >= 100) {
       badge.className = "tag tag-completed";
       badge.textContent = "✓ " + t("projectCompleted");
       tagRow.appendChild(badge);
+    } else if (pct > 0) {
+      badge.className = "tag tag-inprogress";
+      badge.textContent = "◐ " + t("inProgress");
+      tagRow.appendChild(badge);
     }
-  });
+  }
+}
+async function hydrateProjectCards(container, projects) {
+  const summaries = await Promise.all(projects.map(computeProjectSummary));
+  if (!document.body.contains(container)) return; // view changed while loading
+  summaries.forEach((s) => applySummaryToCard(container, s));
 }
 function bindProjectCards(container) {
   container.querySelectorAll(".project-card").forEach((c) => {

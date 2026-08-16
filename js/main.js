@@ -227,7 +227,7 @@ async function renderAnalysis(projects) {
 
   body.innerHTML = `
     <div class="analysis-grid">
-      ${statMini(totalProjects, t("totalProjects"), "stat-white")}
+      ${statMini(totalProjects, t("totalProjects"), "stat-indigo")}
       ${statMini(avgProgress.toFixed(0) + "%", t("avgProgress"), "stat-cyan")}
       ${statMini(completed, t("completedCount"), "stat-green")}
       ${statMini(inProgress, t("inProgressCount"), "stat-yellow")}

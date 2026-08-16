@@ -217,7 +217,8 @@ label { font-size: 12.5px; color: var(--text-dim); display: block; margin-bottom
 .analysis-stat.stat-green .val, .analysis-stat.stat-green .lbl { color: #00ff88; text-shadow: 0 0 6px rgba(0,255,136,.65), 0 0 14px rgba(0,255,136,.3); }
 .analysis-stat.stat-yellow .val, .analysis-stat.stat-yellow .lbl { color: #ffd400; text-shadow: 0 0 6px rgba(255,212,0,.65), 0 0 14px rgba(255,212,0,.3); }
 .analysis-stat.stat-red .val, .analysis-stat.stat-red .lbl { color: #ff0055; text-shadow: 0 0 6px rgba(255,0,85,.65), 0 0 14px rgba(255,0,85,.3); }
-.analysis-stat.stat-darkgreen .val, .analysis-stat.stat-darkgreen .lbl { color: #0c8f52; text-shadow: 0 0 6px rgba(12,143,82,.65), 0 0 14px rgba(12,143,82,.3); }
+.analysis-stat.stat-white .val, .analysis-stat.stat-white .lbl { color: #ffffff; text-shadow: 0 0 6px rgba(255,255,255,.75), 0 0 14px rgba(255,255,255,.4); }
+.analysis-stat.stat-orange .val, .analysis-stat.stat-orange .lbl { color: #ff9500; text-shadow: 0 0 6px rgba(255,149,0,.65), 0 0 14px rgba(255,149,0,.3); }
 .analysis-sub-title { font-size: 13px; font-weight: 700; margin: 14px 0 8px; display: flex; align-items: center; gap: 6px; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: 20px; padding: 6px 12px; font-size: 12.5px; }

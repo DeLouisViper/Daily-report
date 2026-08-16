@@ -227,12 +227,12 @@ async function renderAnalysis(projects) {
 
   body.innerHTML = `
     <div class="analysis-grid">
-      ${statMini(totalProjects, t("totalProjects"))}
+      ${statMini(totalProjects, t("totalProjects"), "stat-white")}
       ${statMini(avgProgress.toFixed(0) + "%", t("avgProgress"), "stat-cyan")}
       ${statMini(completed, t("completedCount"), "stat-green")}
       ${statMini(inProgress, t("inProgressCount"), "stat-yellow")}
       ${statMini(notStarted, t("notStartedCount"), "stat-red")}
-      ${statMini(`${itemsDoneSum}/${itemsTotalSum}`, t("itemsSystemWide"), "stat-darkgreen")}
+      ${statMini(`${itemsDoneSum}/${itemsTotalSum}`, t("itemsSystemWide"), "stat-orange")}
     </div>
     <div class="analysis-sub-title">⚠️ <span>${t("attentionProjects")}</span></div>
     <div class="chip-row">

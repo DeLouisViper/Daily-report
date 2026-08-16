@@ -276,7 +276,7 @@ export async function exportReportToPdf(elementId, filename) {
     let delivered = false;
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
-        await navigator.share({ files: [file], title: filename });
+        await navigator.share({ files: [file] });
         delivered = true;
       } catch (shareErr) {
         // User cancelled the share sheet, or share failed — fall back to a normal download.

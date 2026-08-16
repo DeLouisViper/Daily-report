@@ -228,11 +228,11 @@ async function renderAnalysis(projects) {
   body.innerHTML = `
     <div class="analysis-grid">
       ${statMini(totalProjects, t("totalProjects"))}
-      ${statMini(avgProgress.toFixed(0) + "%", t("avgProgress"), "#f5a623")}
-      ${statMini(completed, t("completedCount"), "var(--success)")}
-      ${statMini(inProgress, t("inProgressCount"))}
-      ${statMini(notStarted, t("notStartedCount"), "var(--danger)")}
-      ${statMini(`${itemsDoneSum}/${itemsTotalSum}`, t("itemsSystemWide"))}
+      ${statMini(avgProgress.toFixed(0) + "%", t("avgProgress"), "stat-cyan")}
+      ${statMini(completed, t("completedCount"), "stat-green")}
+      ${statMini(inProgress, t("inProgressCount"), "stat-yellow")}
+      ${statMini(notStarted, t("notStartedCount"), "stat-red")}
+      ${statMini(`${itemsDoneSum}/${itemsTotalSum}`, t("itemsSystemWide"), "stat-darkgreen")}
     </div>
     <div class="analysis-sub-title">⚠️ <span>${t("attentionProjects")}</span></div>
     <div class="chip-row">
@@ -247,9 +247,9 @@ async function renderAnalysis(projects) {
     el.addEventListener("click", () => navigateTo("project-detail", el.dataset.pid));
   });
 }
-function statMini(value, label, color) {
-  return `<div class="analysis-stat">
-    <div class="val" style="${color ? `color:${color};` : ""}">${value}</div>
+function statMini(value, label, colorClass) {
+  return `<div class="analysis-stat ${colorClass || ""}">
+    <div class="val">${value}</div>
     <div class="lbl">${label}</div>
   </div>`;
 }

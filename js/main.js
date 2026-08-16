@@ -140,7 +140,8 @@ function bindTopbar() {
 // OVERVIEW
 // ============================================================
 function renderOverview() {
-  mainView.innerHTML = topbarHtml("overview") + `
+  const canCreateBtn = canEdit() ? `<button class="btn btn-primary btn-sm" id="newProjectBtnOv" data-i18n="newProject"></button>` : "";
+  mainView.innerHTML = topbarHtml("overview", canCreateBtn) + `
     <div class="card" id="analysisCard">
       <h3>📊 <span data-i18n="analysisTitle"></span></h3>
       <div id="analysisBody"><div class="empty-state">…</div></div>
@@ -149,6 +150,8 @@ function renderOverview() {
     <div class="card"><h3 data-i18n="currentProjects"></h3><div id="ovProjects" class="grid-cards"></div></div>
     <div class="card hidden" id="ovCompletedCard"><h3>✓ <span data-i18n="completedCount"></span></h3><div id="ovCompletedProjects" class="grid-cards"></div></div>`;
   bindTopbar();
+  const newBtnOv = document.getElementById("newProjectBtnOv");
+  if (newBtnOv) newBtnOv.addEventListener("click", () => openProjectModal());
   unsubProjects = watchProjects(async (projects) => {
     projectsCache = projects;
     const total = projects.length;
@@ -905,11 +908,13 @@ function oneOff(watchFn, id) {
 // ACTIVITY LOG VIEW
 // ============================================================
 function renderActivityView() {
-  const extraControls = `
-    <input type="search" id="al_search" placeholder="${t('searchActivity')}" style="min-width:200px;" data-i18n-placeholder="searchActivity" />
-    <select id="al_project" style="min-width:200px;"></select>
-    <select id="al_user" style="min-width:180px;"></select>`;
-  mainView.innerHTML = topbarHtml("activityLog", extraControls) + `<div class="card"><div class="table-wrap"><table id="al_table" class="table-divided"><thead><tr><th>${t("timeCol")}</th><th data-i18n="user"></th><th data-i18n="activity"></th></tr></thead><tbody id="al_body"></tbody></table></div></div>`;
+  mainView.innerHTML = topbarHtml("activityLog") + `
+    <div class="report-toolbar">
+      <div class="field"><input type="search" id="al_search" placeholder="${t('searchActivity')}" data-i18n-placeholder="searchActivity" /></div>
+      <div class="field"><select id="al_project"></select></div>
+      <div class="field"><select id="al_user"></select></div>
+    </div>
+    <div class="card"><div class="table-wrap"><table id="al_table" class="table-divided"><thead><tr><th>${t("timeCol")}</th><th data-i18n="user"></th><th data-i18n="activity"></th></tr></thead><tbody id="al_body"></tbody></table></div></div>`;
   bindTopbar();
   const sel = document.getElementById("al_project");
   const userSel = document.getElementById("al_user");

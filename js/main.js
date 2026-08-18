@@ -546,17 +546,62 @@ async function renderProjectDetail(projectId) {
 function renderSoilTab(project) {
   const content = document.getElementById("tabContent");
   const addBtn = canEdit() ? `<button class="btn btn-primary btn-sm" id="addBoreholeBtn" data-i18n="addBorehole"></button>` : "";
-  content.innerHTML = `<div style="display:flex; justify-content:flex-end; margin-bottom:10px;">${addBtn}</div><div id="boreholeList"></div>`;
+  content.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+      <input type="search" id="bh_search" style="max-width:280px;" data-i18n-placeholder="searchBorehole" />
+      ${addBtn}
+    </div>
+    <div class="tabs" id="bhTabs">
+      <button class="tab-btn active" data-tab="active">${t("inProgress")}</button>
+      <button class="tab-btn" data-tab="completed">${t("completedCount")}</button>
+    </div>
+    <div id="boreholeActiveList"></div>
+    <div id="boreholeCompletedList" class="hidden"></div>
+  `;
   applyI18n(content);
   const addBtnEl = document.getElementById("addBoreholeBtn");
   if (addBtnEl) addBtnEl.addEventListener("click", () => openBoreholeModal(project.id));
 
+  const tabs = document.querySelectorAll("#bhTabs .tab-btn");
+  const activeList = document.getElementById("boreholeActiveList");
+  const completedList = document.getElementById("boreholeCompletedList");
+  tabs.forEach((b) => b.addEventListener("click", () => {
+    tabs.forEach((x) => x.classList.toggle("active", x === b));
+    activeList.classList.toggle("hidden", b.dataset.tab !== "active");
+    completedList.classList.toggle("hidden", b.dataset.tab !== "completed");
+  }));
+
+  const searchEl = document.getElementById("bh_search");
+  let allBoreholes = [];
+  function renderLists() {
+    const q = searchEl.value.trim().toLowerCase();
+    const filtered = q ? allBoreholes.filter((b) => (b.name || "").toLowerCase().includes(q)) : allBoreholes;
+    const withPct = filtered.map((b) => {
+      const total = sumDailyLog(b.dailyLog);
+      const contract = Number(b.contractVolume) || 0;
+      const pct = contract > 0 ? Math.min(100, (total / contract) * 100) : 0;
+      return { b, pct, hasContract: contract > 0 };
+    });
+    const completed = withPct.filter((x) => x.hasContract && x.pct >= 100);
+    const active = withPct.filter((x) => !(x.hasContract && x.pct >= 100));
+    // Ưu tiên hố khoan đang thực hiện (đã có khối lượng > 0%) lên đầu, sau đó theo % giảm dần.
+    active.sort((a, b2) => {
+      const aStarted = a.pct > 0 ? 1 : 0;
+      const bStarted = b2.pct > 0 ? 1 : 0;
+      if (aStarted !== bStarted) return bStarted - aStarted;
+      return b2.pct - a.pct;
+    });
+
+    activeList.innerHTML = active.length ? active.map((x) => boreholeBlockHtml(x.b)).join("") : `<div class="empty-state">—</div>`;
+    completedList.innerHTML = completed.length ? completed.map((x) => boreholeBlockHtml(x.b)).join("") : `<div class="empty-state">—</div>`;
+    active.forEach((x) => bindBoreholeBlock(project.id, x.b));
+    completed.forEach((x) => bindBoreholeBlock(project.id, x.b));
+  }
+  searchEl.addEventListener("input", renderLists);
+
   const unsub = watchBoreholes(project.id, (boreholes) => {
-    const list = document.getElementById("boreholeList");
-    if (!list) return;
-    if (!boreholes.length) { list.innerHTML = `<div class="empty-state">—</div>`; return; }
-    list.innerHTML = boreholes.map((b) => boreholeBlockHtml(b)).join("");
-    boreholes.forEach((b) => bindBoreholeBlock(project.id, b));
+    allBoreholes = boreholes;
+    renderLists();
   });
   currentProjectUnsubs.push(unsub);
 }

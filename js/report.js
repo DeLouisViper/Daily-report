@@ -269,12 +269,16 @@ export async function exportReportToPdf(elementId, filename) {
 
     // Deliver the file. On mobile, sharing a blob: URL via an <a download> link
     // makes Safari's share sheet split it into "1 document + 1 link" (2 separate
-    // files land in the chat app). The Web Share API with a real File avoids that
-    // entirely — it hands over just the file, with the correct name, natively.
+    // files land in the chat app), so we use the Web Share API with a real File
+    // there instead. On desktop, some browsers now also support Web Share with
+    // files (opening the OS-level share panel) — but on desktop people expect a
+    // plain download to their Downloads folder, not a share dialog, so we only
+    // use Web Share when we're actually on a phone/tablet.
+    const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     const blob = pdf.output("blob");
     const file = new File([blob], filename, { type: "application/pdf" });
     let delivered = false;
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    if (isMobileDevice && navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({ files: [file] });
         delivered = true;

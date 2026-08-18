@@ -1,6 +1,13 @@
 import { sumDailyLog } from "./store.js";
 import { t } from "./i18n.js";
 
+// Rounding a small-but-nonzero progress (e.g. 0.8%) to a whole number shows a
+// misleading "0%". Fall back to one decimal place only in that edge case.
+function formatPct(pct) {
+  if (pct > 0 && Math.round(pct) === 0) return pct.toFixed(1);
+  return pct.toFixed(0);
+}
+
 function statusOf(pct) {
   if (pct >= 100) return { key: "completed", cls: "high", colorCls: "st-done" };
   if (pct <= 0) return { key: "notStarted", cls: "low", colorCls: "st-missing" };
@@ -74,13 +81,13 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
       <td class="num">${r.contract.toLocaleString()} ${escapeHtml(r.unit)}</td>
       <td class="num">${r.today.toLocaleString()} ${escapeHtml(r.unit)}</td>
       <td class="num">${r.total.toLocaleString()} ${escapeHtml(r.unit)}</td>
-      <td class="num">${r.pct.toFixed(0)}%</td>
+      <td class="num">${formatPct(r.pct)}%</td>
       <td><span class="${st.colorCls}">${t(st.key)}</span></td>
     </tr>`;
   }).join("");
 
   const missingHtml = missing.length
-    ? `<div class="report-section"><div class="section-title">${t("missingItems")}</div><ul class="missing-list">${missing.map((m) => `<li class="st-missing">${escapeHtml(m.label)} — ${m.pct.toFixed(0)}%</li>`).join("")}</ul></div>`
+    ? `<div class="report-section"><div class="section-title">${t("missingItems")}</div><ul class="missing-list">${missing.map((m) => `<li class="${m.pct > 0 ? "st-progress" : "st-missing"}">${escapeHtml(m.label)} — ${formatPct(m.pct)}%</li>`).join("")}</ul></div>`
     : "";
 
   const boreholeRows = rows.filter((r) => r.type === "soil");
@@ -134,9 +141,9 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
 
       <div class="report-progress-wrap">
         <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:4px;">
-          <span>${t("overallProgress")}</span><span>${overallPct.toFixed(0)}%</span>
+          <span>${t("overallProgress")}</span><span>${formatPct(overallPct)}%</span>
         </div>
-        <div class="progress-bar"><div style="width:${overallPct.toFixed(0)}%"></div></div>
+        <div class="progress-bar"><div style="width:${Math.max(overallPct, overallPct > 0 ? 1 : 0).toFixed(0)}%"></div></div>
       </div>
     </div>
 
@@ -179,11 +186,52 @@ export function buildSummaryText({ project, boreholes, surveyItems, dKey, lang }
   const rows = buildReportRows(project, boreholes, surveyItems, dKey);
   const overallPct = rows.length ? rows.reduce((a, r) => a + r.pct, 0) / rows.length : 0;
   const dateDisplay = dKey.split("-").reverse().join("/");
-  let txt = `${project.name} — ${t("reportDate")}: ${dateDisplay}\n${t("overallProgress")}: ${overallPct.toFixed(0)}%\n\n`;
+  let txt = `${project.name} — ${t("reportDate")}: ${dateDisplay}\n${t("overallProgress")}: ${formatPct(overallPct)}%\n\n`;
   rows.forEach((r) => {
-    txt += `- ${r.label}: ${r.today} ${r.unit} ${lang === "vi" ? "hôm nay" : "today"} | ${t("total")} ${r.total}/${r.contract} ${r.unit} (${r.pct.toFixed(0)}%)\n`;
+    txt += `- ${r.label}: ${r.today} ${r.unit} ${lang === "vi" ? "hôm nay" : "today"} | ${t("total")} ${r.total}/${r.contract} ${r.unit} (${formatPct(r.pct)}%)\n`;
   });
   return txt;
+}
+
+// Splits an oversized report-section (one that contains a <table> taller than a
+// single page) into page-sized pieces at row boundaries. Every piece after the
+// first carries `headerRect` — the section title + table header row, captured in
+// viewport coordinates — so the caller can redraw it at the top of that page.
+function splitTableSection(sectionEl, table, elTop, usableHeightPx, sectionTop, sectionBottom) {
+  const theadEl = table.querySelector("thead");
+  const titleEl = sectionEl.querySelector(".section-title");
+  const bodyRows = Array.from(table.querySelectorAll("tbody tr"));
+  if (!theadEl || !bodyRows.length) {
+    return [{ top: sectionTop, bottom: sectionBottom, headerRect: null }];
+  }
+
+  const theadRectRaw = theadEl.getBoundingClientRect(); // viewport coordinates
+  const headerRectRaw = titleEl
+    ? { top: titleEl.getBoundingClientRect().top, bottom: theadRectRaw.bottom }
+    : { top: theadRectRaw.top, bottom: theadRectRaw.bottom };
+  const headerHeightRel = headerRectRaw.bottom - headerRectRaw.top;
+  const theadBottomRel = theadRectRaw.bottom - elTop;
+
+  const pieces = [];
+  let pieceTop = sectionTop;
+  let budgetBottom = pieceTop + usableHeightPx;
+  let lastSafeBottom = theadBottomRel;
+  let continuing = false;
+
+  bodyRows.forEach((rowEl) => {
+    const rr = rowEl.getBoundingClientRect();
+    const rTopRel = rr.top - elTop;
+    const rBottomRel = rr.bottom - elTop;
+    if (rBottomRel > budgetBottom && rBottomRel - rTopRel < usableHeightPx) {
+      pieces.push({ top: pieceTop, bottom: lastSafeBottom, headerRect: continuing ? headerRectRaw : null });
+      continuing = true;
+      pieceTop = rTopRel;
+      budgetBottom = pieceTop + (usableHeightPx - headerHeightRel);
+    }
+    lastSafeBottom = rBottomRel;
+  });
+  pieces.push({ top: pieceTop, bottom: sectionBottom, headerRect: continuing ? headerRectRaw : null });
+  return pieces;
 }
 
 export async function exportReportToPdf(elementId, filename) {
@@ -224,43 +272,84 @@ export async function exportReportToPdf(elementId, filename) {
     const pxPerMm = cssWidthPx / pageWidthMm; // clone is fixed at 210mm wide
     const usableHeightPx = usableHeightMm * pxPerMm; // in CSS px (un-scaled)
 
-    // Only break between top-level sections (never mid-table / mid-row).
+    // Build the list of page "pieces". Normal-sized sections pack together onto a
+    // page like before. A section taller than one page (e.g. a table with 30+ rows)
+    // gets split at row boundaries instead of being pushed whole onto its own page —
+    // and every continuation page repeats that table's title + column header row so
+    // it's still readable/traceable without scrolling back.
     const children = Array.from(el.children);
-    const boxes = children.map((c) => {
-      const r = c.getBoundingClientRect();
-      return { top: r.top - elRect.top, bottom: r.bottom - elRect.top };
-    });
+    const pieces = [];
+    let pageTop = 0;
+    let pageBottom = 0;
+    let pageHasContent = false;
+    const flushPage = () => {
+      if (pageHasContent) pieces.push({ top: pageTop, bottom: pageBottom, headerRect: null });
+      pageHasContent = false;
+    };
 
-    const breakpoints = [0];
-    let pageStartPx = 0;
-    boxes.forEach((box) => {
-      if (box.bottom - pageStartPx > usableHeightPx && box.top > pageStartPx) {
-        breakpoints.push(box.top);
-        pageStartPx = box.top;
+    children.forEach((child) => {
+      const r = child.getBoundingClientRect();
+      const childTop = r.top - elRect.top;
+      const childBottom = r.bottom - elRect.top;
+      const childHeight = childBottom - childTop;
+
+      if (childHeight > usableHeightPx) {
+        flushPage(); // whatever was accumulating so far gets its own page first
+        const table = child.querySelector("table");
+        if (table) {
+          pieces.push(...splitTableSection(child, table, elRect.top, usableHeightPx, childTop, childBottom));
+        } else {
+          pieces.push({ top: childTop, bottom: childBottom, headerRect: null }); // oversized, no table to split by — best effort
+        }
+        return;
+      }
+
+      if (!pageHasContent) {
+        pageTop = childTop;
+        pageBottom = childBottom;
+        pageHasContent = true;
+      } else if (childBottom - pageTop > usableHeightPx) {
+        flushPage();
+        pageTop = childTop;
+        pageBottom = childBottom;
+        pageHasContent = true;
+      } else {
+        pageBottom = childBottom;
       }
     });
-    breakpoints.push(elRect.height);
+    flushPage();
 
     const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
-    const totalPages = breakpoints.length - 1;
+    const totalPages = pieces.length;
 
     for (let i = 0; i < totalPages; i++) {
-      const sliceTopPx = Math.round(breakpoints[i] * pxPerCssPx);
-      const sliceBottomPx = Math.round(breakpoints[i + 1] * pxPerCssPx);
-      const sliceHeightPx = Math.max(1, sliceBottomPx - sliceTopPx);
+      const piece = pieces[i];
+      const bodyTopPx = Math.round(piece.top * pxPerCssPx);
+      const bodyBottomPx = Math.round(piece.bottom * pxPerCssPx);
+      const bodyHeightPx = Math.max(1, bodyBottomPx - bodyTopPx);
+
+      let headerHeightPx = 0;
+      let headerTopPx = 0;
+      if (piece.headerRect) {
+        headerTopPx = Math.round((piece.headerRect.top - elRect.top) * pxPerCssPx);
+        headerHeightPx = Math.max(1, Math.round((piece.headerRect.bottom - elRect.top) * pxPerCssPx) - headerTopPx);
+      }
 
       const sliceCanvas = document.createElement("canvas");
       sliceCanvas.width = canvas.width;
-      sliceCanvas.height = sliceHeightPx;
+      sliceCanvas.height = headerHeightPx + bodyHeightPx;
       const ctx = sliceCanvas.getContext("2d");
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-      ctx.drawImage(canvas, 0, sliceTopPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
+      if (headerHeightPx > 0) {
+        ctx.drawImage(canvas, 0, headerTopPx, canvas.width, headerHeightPx, 0, 0, canvas.width, headerHeightPx);
+      }
+      ctx.drawImage(canvas, 0, bodyTopPx, canvas.width, bodyHeightPx, 0, headerHeightPx, canvas.width, bodyHeightPx);
 
       // JPEG at high quality keeps the page looking identical while producing a
       // file many times smaller than PNG — important for sharing over chat apps.
       const imgData = sliceCanvas.toDataURL("image/jpeg", 0.92);
-      const sliceHeightMm = sliceHeightPx / pxPerCssPx / pxPerMm;
+      const sliceHeightMm = sliceCanvas.height / pxPerCssPx / pxPerMm;
 
       if (i > 0) pdf.addPage();
       pdf.addImage(imgData, "JPEG", 0, marginTopMm, pageWidthMm, sliceHeightMm, undefined, "MEDIUM");

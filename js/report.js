@@ -43,6 +43,11 @@ export function buildReportRows(project, boreholes, surveyItems, dKey) {
       type: "survey",
     });
   });
+  // Ưu tiên hạng mục đang thực hiện lên đầu báo cáo, rồi tới chưa bắt đầu, hoàn thành xuống cuối.
+  rows.sort((a, b) => {
+    const rank = (r) => (r.pct > 0 && r.pct < 100 ? 0 : r.pct <= 0 ? 1 : 2);
+    return rank(a) - rank(b);
+  });
   return rows;
 }
 

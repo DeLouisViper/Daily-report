@@ -341,11 +341,11 @@ function applySummaryToCard(container, s) {
 
   const ring = card.querySelector(".pc-ring");
   if (ring) {
-    ring.style.setProperty("--pct", pct);
+    ring.style.setProperty("--pct", Math.min(100, pct));
     ring.querySelector("span").textContent = pct + "%";
   }
   const bar = card.querySelector(".pc-progress-bar > div");
-  if (bar) bar.style.width = pct + "%";
+  if (bar) bar.style.width = Math.min(100, pct) + "%";
 
   const itemsWrap = card.querySelector(".pc-items");
   if (itemsWrap) {
@@ -609,7 +609,7 @@ function pctBadgeClass(pct) { return pct >= 100 ? "high" : pct >= 40 ? "mid" : "
 function boreholeBlockHtml(b) {
   const total = sumDailyLog(b.dailyLog);
   const contract = Number(b.contractVolume) || 0;
-  const pct = contract > 0 ? Math.min(100, (total / contract) * 100) : 0;
+  const pct = contract > 0 ? (total / contract) * 100 : 0; // hiển thị đúng thực tế, có thể > 100%
   const today = new Date();
   const todayVal = (b.dailyLog || {})[dateKey(today)] || "";
   return `<div class="item-block" data-id="${b.id}">
@@ -626,7 +626,7 @@ function boreholeBlockHtml(b) {
       <div class="field"><label data-i18n="completedTotal"></label><input value="${total} / ${contract} m" disabled /></div>
       <div class="field"><label data-i18n="waterLevel"></label><input value="${b.waterLevel ?? "—"}" disabled /></div>
     </div>
-    <div class="progress-bar"><div style="width:${pct.toFixed(0)}%"></div></div>
+    <div class="progress-bar"><div style="width:${Math.min(100, pct).toFixed(0)}%"></div></div>
     <div class="field-row" style="margin-top:12px;">
       <div class="field">
         <label data-i18n="completedToday"></label>
@@ -740,7 +740,7 @@ function renderSurveyTab(project) {
 function surveyBlockHtml(s) {
   const total = sumDailyLog(s.dailyLog);
   const contract = Number(s.contractQty) || 0;
-  const pct = contract > 0 ? Math.min(100, (total / contract) * 100) : 0;
+  const pct = contract > 0 ? (total / contract) * 100 : 0; // hiển thị đúng thực tế, có thể > 100%
   const todayVal = (s.dailyLog || {})[dateKey()] || "";
   const label = surveyItemLabel(s);
   return `<div class="item-block" data-id="${s.id}">
@@ -760,7 +760,7 @@ function surveyBlockHtml(s) {
         <input type="number" class="today-input" min="0" step="0.1" value="${todayVal}" ${canEdit() ? "" : "disabled"} />
       </div>
     </div>
-    <div class="progress-bar"><div style="width:${pct.toFixed(0)}%"></div></div>
+    <div class="progress-bar"><div style="width:${Math.min(100, pct).toFixed(0)}%"></div></div>
     ${s.note ? `<div class="field" style="margin-top:10px;"><label data-i18n="note"></label><div style="font-size:13px;">${escapeHtml(s.note)}</div></div>` : ""}
   </div>`;
 }

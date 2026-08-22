@@ -27,7 +27,7 @@ export function buildReportRows(project, boreholes, surveyItems, dKey) {
     const total = sumDailyLog(b.dailyLog);
     const contract = Number(b.contractVolume) || 0;
     const today = Number((b.dailyLog || {})[dKey]) || 0;
-    const pct = contract > 0 ? Math.min(100, (total / contract) * 100) : 0;
+    const pct = contract > 0 ? (total / contract) * 100 : 0; // hiển thị đúng thực tế, có thể > 100%
     rows.push({
       label: b.name || "—",
       unit: "m",
@@ -41,7 +41,7 @@ export function buildReportRows(project, boreholes, surveyItems, dKey) {
     const total = sumDailyLog(s.dailyLog);
     const contract = Number(s.contractQty) || 0;
     const today = Number((s.dailyLog || {})[dKey]) || 0;
-    const pct = contract > 0 ? Math.min(100, (total / contract) * 100) : 0;
+    const pct = contract > 0 ? (total / contract) * 100 : 0; // hiển thị đúng thực tế, có thể > 100%
     rows.push({
       label: surveyLabel(s),
       unit: s.unit || "",
@@ -50,9 +50,10 @@ export function buildReportRows(project, boreholes, surveyItems, dKey) {
       type: "survey",
     });
   });
-  // Ưu tiên hạng mục đang thực hiện lên đầu báo cáo, rồi tới chưa bắt đầu, hoàn thành xuống cuối.
+  // Ưu tiên hạng mục đang thực hiện lên đầu, kế đến là đã hoàn thành (đẩy lên trên,
+  // không để tụt xuống cuối bảng), cuối cùng mới tới hạng mục chưa bắt đầu.
   rows.sort((a, b) => {
-    const rank = (r) => (r.pct > 0 && r.pct < 100 ? 0 : r.pct <= 0 ? 1 : 2);
+    const rank = (r) => (r.pct > 0 && r.pct < 100 ? 0 : r.pct >= 100 ? 1 : 2);
     return rank(a) - rank(b);
   });
   return rows;
@@ -143,7 +144,7 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
         <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:4px;">
           <span>${t("overallProgress")}</span><span>${formatPct(overallPct)}%</span>
         </div>
-        <div class="progress-bar"><div style="width:${Math.max(overallPct, overallPct > 0 ? 1 : 0).toFixed(0)}%"></div></div>
+        <div class="progress-bar"><div style="width:${Math.min(100, Math.max(overallPct, overallPct > 0 ? 1 : 0)).toFixed(0)}%"></div></div>
       </div>
     </div>
 
@@ -234,6 +235,63 @@ function splitTableSection(sectionEl, table, elTop, usableHeightPx, sectionTop, 
   return pieces;
 }
 
+// Builds the list of page "pieces" (each {top, bottom, headerRect}) for a report
+// element. Normal-sized sections pack together onto a page. A section taller than
+// one page (e.g. a table with 30+ rows) gets split at row boundaries and keeps
+// filling whatever space is left on the current page first, instead of always
+// jumping to a fresh page and leaving the current one mostly blank. Continuation
+// pieces carry `headerRect` so the caller can redraw that table's title + header
+// row at the top of the next page.
+export function computePagePieces(el, elRect, usableHeightPx) {
+  const children = Array.from(el.children);
+  const pieces = [];
+  let pageTop = 0;
+  let pageBottom = 0;
+  let pageHasContent = false;
+  const flushPage = () => {
+    if (pageHasContent) pieces.push({ top: pageTop, bottom: pageBottom, headerRect: null });
+    pageHasContent = false;
+  };
+
+  children.forEach((child) => {
+    const r = child.getBoundingClientRect();
+    const childTop = r.top - elRect.top;
+    const childBottom = r.bottom - elRect.top;
+    const childHeight = childBottom - childTop;
+    const remainingOnPage = pageHasContent ? (pageTop + usableHeightPx - pageBottom) : usableHeightPx;
+
+    if (childHeight > remainingOnPage) {
+      const table = child.querySelector("table");
+      const hasRows = table && table.querySelectorAll("tbody tr").length > 0;
+      if (hasRows) {
+        const firstPieceTop = pageHasContent ? pageTop : childTop;
+        const firstPieceBudgetBottom = firstPieceTop + usableHeightPx;
+        pieces.push(...splitTableSection(child, table, elRect.top, usableHeightPx, childTop, childBottom, firstPieceTop, firstPieceBudgetBottom));
+        pageHasContent = false;
+      } else if (childHeight > usableHeightPx) {
+        flushPage();
+        pieces.push({ top: childTop, bottom: childBottom, headerRect: null }); // oversized, nothing to split by — best effort
+      } else {
+        flushPage();
+        pageTop = childTop;
+        pageBottom = childBottom;
+        pageHasContent = true;
+      }
+      return;
+    }
+
+    if (!pageHasContent) {
+      pageTop = childTop;
+      pageBottom = childBottom;
+      pageHasContent = true;
+    } else {
+      pageBottom = childBottom;
+    }
+  });
+  flushPage();
+  return pieces;
+}
+
 export async function exportReportToPdf(elementId, filename) {
   const { jsPDF } = window.jspdf;
   const original = document.getElementById(elementId);
@@ -277,55 +335,7 @@ export async function exportReportToPdf(elementId, filename) {
     // gets split at row boundaries instead of being pushed whole onto its own page —
     // and every continuation page repeats that table's title + column header row so
     // it's still readable/traceable without scrolling back.
-    const children = Array.from(el.children);
-    const pieces = [];
-    let pageTop = 0;
-    let pageBottom = 0;
-    let pageHasContent = false;
-    const flushPage = () => {
-      if (pageHasContent) pieces.push({ top: pageTop, bottom: pageBottom, headerRect: null });
-      pageHasContent = false;
-    };
-
-    children.forEach((child) => {
-      const r = child.getBoundingClientRect();
-      const childTop = r.top - elRect.top;
-      const childBottom = r.bottom - elRect.top;
-      const childHeight = childBottom - childTop;
-      const remainingOnPage = pageHasContent ? (pageTop + usableHeightPx - pageBottom) : usableHeightPx;
-
-      if (childHeight > remainingOnPage) {
-        const table = child.querySelector("table");
-        const hasRows = table && table.querySelectorAll("tbody tr").length > 0;
-        if (hasRows) {
-          // Keep filling the current page (if any) with as many rows as fit, then
-          // continue on fresh pages — rather than always pushing the whole table
-          // onto a new page and leaving the current one mostly blank.
-          const firstPieceTop = pageHasContent ? pageTop : childTop;
-          const firstPieceBudgetBottom = firstPieceTop + usableHeightPx;
-          pieces.push(...splitTableSection(child, table, elRect.top, usableHeightPx, childTop, childBottom, firstPieceTop, firstPieceBudgetBottom));
-          pageHasContent = false;
-        } else if (childHeight > usableHeightPx) {
-          flushPage();
-          pieces.push({ top: childTop, bottom: childBottom, headerRect: null }); // oversized, nothing to split by — best effort
-        } else {
-          flushPage();
-          pageTop = childTop;
-          pageBottom = childBottom;
-          pageHasContent = true;
-        }
-        return;
-      }
-
-      if (!pageHasContent) {
-        pageTop = childTop;
-        pageBottom = childBottom;
-        pageHasContent = true;
-      } else {
-        pageBottom = childBottom;
-      }
-    });
-    flushPage();
+    const pieces = computePagePieces(el, elRect, usableHeightPx);
 
     const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
     const totalPages = pieces.length;

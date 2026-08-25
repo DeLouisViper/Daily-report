@@ -617,6 +617,7 @@ function boreholeBlockHtml(b) {
       <h4>🕳 ${escapeHtml(b.name || "—")} <span style="color:var(--text-dim); font-weight:500;">(${escapeHtml(b.team || "—")})</span></h4>
       <div class="item-actions">
         <span class="pct-badge ${pctBadgeClass(pct)}">${pct.toFixed(0)}%</span>
+        ${canEdit() ? `<button class="btn btn-ghost btn-sm reset-bh" data-i18n="resetProgress"></button>` : ""}
         ${canEdit() ? `<button class="btn btn-ghost btn-sm edit-bh" data-i18n="edit"></button>` : ""}
         ${canEdit() ? `<button class="btn btn-danger btn-sm del-bh" data-i18n="delete"></button>` : ""}
       </div>
@@ -648,6 +649,14 @@ function bindBoreholeBlock(projectId, b) {
   const delBtn = el.querySelector(".del-bh");
   if (delBtn) delBtn.addEventListener("click", async () => {
     if (confirm(t("deleteConfirm"))) await deleteBorehole(projectId, b.id, CURRENT_USER, b.name);
+  });
+  const resetBtn = el.querySelector(".reset-bh");
+  if (resetBtn) resetBtn.addEventListener("click", async () => {
+    if (confirm(t("resetConfirm"))) {
+      showSaveIndicator(true);
+      await updateBorehole(projectId, b.id, { dailyLog: {} }, CURRENT_USER, `${b.name}: ${t("resetProgress")}`);
+      showSaveIndicator();
+    }
   });
   const todayInput = el.querySelector(".today-input");
   if (todayInput) {
@@ -748,6 +757,7 @@ function surveyBlockHtml(s) {
       <h4>📍 ${escapeHtml(label)} ${s.assignee ? `<span style="color:var(--text-dim); font-weight:500;">(${escapeHtml(s.assignee)})</span>` : ""}</h4>
       <div class="item-actions">
         <span class="pct-badge ${pctBadgeClass(pct)}">${pct.toFixed(0)}%</span>
+        ${canEdit() ? `<button class="btn btn-ghost btn-sm reset-sv" data-i18n="resetProgress"></button>` : ""}
         ${canEdit() ? `<button class="btn btn-ghost btn-sm edit-sv" data-i18n="edit"></button>` : ""}
         ${canEdit() ? `<button class="btn btn-danger btn-sm del-sv" data-i18n="delete"></button>` : ""}
       </div>
@@ -773,6 +783,14 @@ function bindSurveyBlock(projectId, s) {
   const delBtn = el.querySelector(".del-sv");
   if (delBtn) delBtn.addEventListener("click", async () => {
     if (confirm(t("deleteConfirm"))) await deleteSurveyItem(projectId, s.id, CURRENT_USER, surveyItemLabel(s));
+  });
+  const resetBtn = el.querySelector(".reset-sv");
+  if (resetBtn) resetBtn.addEventListener("click", async () => {
+    if (confirm(t("resetConfirm"))) {
+      showSaveIndicator(true);
+      await updateSurveyItem(projectId, s.id, { dailyLog: {} }, CURRENT_USER, `${surveyItemLabel(s)}: ${t("resetProgress")}`);
+      showSaveIndicator();
+    }
   });
   const todayInput = el.querySelector(".today-input");
   if (todayInput) {

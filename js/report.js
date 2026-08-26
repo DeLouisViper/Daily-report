@@ -35,6 +35,7 @@ export function buildReportRows(project, boreholes, surveyItems, dKey) {
       contract, today, total, pct,
       type: "soil",
       coordN: b.coordN, coordE: b.coordE, elevation: b.elevation, waterLevel: b.waterLevel,
+      soilM: b.soilM, rockM: b.rockM, note: b.note,
     });
   });
   (surveyItems || []).forEach((s) => {
@@ -52,14 +53,17 @@ export function buildReportRows(project, boreholes, surveyItems, dKey) {
   });
   // Ưu tiên hạng mục đang thực hiện lên đầu, kế đến là đã hoàn thành (đẩy lên trên,
   // không để tụt xuống cuối bảng), cuối cùng mới tới hạng mục chưa bắt đầu.
+  // Trong mỗi nhóm, sắp xếp theo tên A-Z, 0-9 (tự nhiên) thay vì theo thứ tự tạo.
   rows.sort((a, b) => {
     const rank = (r) => (r.pct > 0 && r.pct < 100 ? 0 : r.pct >= 100 ? 1 : 2);
-    return rank(a) - rank(b);
+    const rankDiff = rank(a) - rank(b);
+    if (rankDiff !== 0) return rankDiff;
+    return (a.label || "").localeCompare(b.label || "", undefined, { numeric: true, sensitivity: "base" });
   });
   return rows;
 }
 
-export function buildReportHTML({ project, boreholes, surveyItems, dKey, currentUser, lang }) {
+export function buildReportHTML({ project, boreholes, surveyItems, dKey, currentUser, lang, includeSoilRockTable }) {
   const rows = buildReportRows(project, boreholes, surveyItems, dKey);
   const overallPct = rows.length ? rows.reduce((a, r) => a + r.pct, 0) / rows.length : 0;
   const missing = rows.filter((r) => r.pct < 100);
@@ -103,6 +107,22 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
            <td class="num">${escapeHtml(r.coordE || "—")}</td>
            <td class="num">${escapeHtml(r.elevation || "—")}</td>
            <td class="num">${escapeHtml(r.waterLevel || "—")}</td>
+         </tr>`).join("")}</tbody>
+       </table>
+       </div>`
+    : "";
+
+  const soilRockHtml = includeSoilRockTable && boreholeRows.length
+    ? `<div class="report-section">
+       <div class="section-title">${t("soilRockTableTitle")}</div>
+       <table class="report-table-closed">
+         <thead><tr><th>${t("borholeNameCol")}</th><th>${t("totalQtyCol")} (m)</th><th>${t("soilM")}</th><th>${t("rockM")}</th><th>${t("note")}</th></tr></thead>
+         <tbody>${boreholeRows.map((r) => `<tr>
+           <td>${escapeHtml(r.label)}</td>
+           <td class="num">${r.total.toLocaleString()}</td>
+           <td class="num">${r.soilM != null && r.soilM !== "" ? r.soilM : "—"}</td>
+           <td class="num">${r.rockM != null && r.rockM !== "" ? r.rockM : "—"}</td>
+           <td>${escapeHtml(r.note || "—")}</td>
          </tr>`).join("")}</tbody>
        </table>
        </div>`
@@ -159,6 +179,8 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
     </div>
 
     ${missingHtml}
+
+    ${soilRockHtml}
 
     ${coordsHtml}
 

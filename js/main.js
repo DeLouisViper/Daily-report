@@ -584,13 +584,16 @@ function renderSoilTab(project) {
     });
     const completed = withPct.filter((x) => x.hasContract && x.pct >= 100);
     const active = withPct.filter((x) => !(x.hasContract && x.pct >= 100));
-    // Ưu tiên hố khoan đang thực hiện (đã có khối lượng > 0%) lên đầu, sau đó theo % giảm dần.
+    // Ưu tiên hố khoan đang thực hiện lên đầu, chưa bắt đầu ở dưới; trong mỗi
+    // nhóm sắp xếp theo tên A-Z, 0-9 (tự nhiên) thay vì theo % hay thứ tự tạo.
+    const nameCompare = (a, b) => (a.b.name || "").localeCompare(b.b.name || "", undefined, { numeric: true, sensitivity: "base" });
     active.sort((a, b2) => {
-      const aStarted = a.pct > 0 ? 1 : 0;
-      const bStarted = b2.pct > 0 ? 1 : 0;
-      if (aStarted !== bStarted) return bStarted - aStarted;
-      return b2.pct - a.pct;
+      const aStarted = a.pct > 0 ? 0 : 1;
+      const bStarted = b2.pct > 0 ? 0 : 1;
+      if (aStarted !== bStarted) return aStarted - bStarted;
+      return nameCompare(a, b2);
     });
+    completed.sort(nameCompare);
 
     activeList.innerHTML = active.length ? active.map((x) => boreholeBlockHtml(x.b)).join("") : `<div class="empty-state">—</div>`;
     completedList.innerHTML = completed.length ? completed.map((x) => boreholeBlockHtml(x.b)).join("") : `<div class="empty-state">—</div>`;
@@ -636,6 +639,8 @@ function boreholeBlockHtml(b) {
       <div class="field"><label data-i18n="coordN"></label><input value="${b.coordN ?? "—"}" disabled /></div>
       <div class="field"><label data-i18n="coordE"></label><input value="${b.coordE ?? "—"}" disabled /></div>
       <div class="field"><label data-i18n="elevation"></label><input value="${b.elevation ?? "—"}" disabled /></div>
+      <div class="field"><label data-i18n="soilM"></label><input value="${b.soilM ?? "—"}" disabled /></div>
+      <div class="field"><label data-i18n="rockM"></label><input value="${b.rockM ?? "—"}" disabled /></div>
     </div>
     ${b.note ? `<div class="field"><label data-i18n="note"></label><div style="font-size:13px;">${escapeHtml(b.note)}</div></div>` : ""}
   </div>`;
@@ -694,6 +699,10 @@ function openBoreholeModal(projectId, b) {
         <div class="field"><label data-i18n="elevation"></label><input id="bh_elev" value="${escapeAttr(b?.elevation)}" /></div>
         <div class="field"><label data-i18n="waterLevel"></label><input id="bh_water" value="${escapeAttr(b?.waterLevel)}" /></div>
       </div>
+      <div class="field-row">
+        <div class="field"><label data-i18n="soilM"></label><input type="number" id="bh_soilM" value="${b?.soilM ?? ""}" /></div>
+        <div class="field"><label data-i18n="rockM"></label><input type="number" id="bh_rockM" value="${b?.rockM ?? ""}" /></div>
+      </div>
       <div class="field"><label data-i18n="note"></label><textarea id="bh_note" rows="2">${escapeHtml(b?.note)}</textarea></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="bh_cancel" data-i18n="cancel"></button>
@@ -717,6 +726,8 @@ function openBoreholeModal(projectId, b) {
       coordE: document.getElementById("bh_e").value.trim(),
       elevation: document.getElementById("bh_elev").value.trim(),
       waterLevel: document.getElementById("bh_water").value.trim(),
+      soilM: Number(document.getElementById("bh_soilM").value) || 0,
+      rockM: Number(document.getElementById("bh_rockM").value) || 0,
       note: document.getElementById("bh_note").value.trim(),
     };
     if (!data.name) return;
@@ -884,6 +895,13 @@ function renderReportView(preselectedProjectId) {
       <button class="btn btn-primary" id="rp_exportPdf" data-i18n="exportPdf"></button>
       <button class="btn btn-ghost" id="rp_copy" data-i18n="copySummary"></button>
     </div>
+    <label class="switch-row">
+      <span class="switch">
+        <input type="checkbox" id="rp_includeSoilRock" ${localStorage.getItem("sh_includeSoilRock") === "false" ? "" : "checked"} />
+        <span class="switch-slider"></span>
+      </span>
+      <span data-i18n="includeSoilRockTable"></span>
+    </label>
     <div class="card">
       <h3 data-i18n="nextDayPlan"></h3>
       <textarea id="rp_nextPlan" rows="2" data-i18n-placeholder="nextDayPlanPlaceholder" ${canEdit() ? "" : "disabled"}></textarea>
@@ -897,6 +915,12 @@ function renderReportView(preselectedProjectId) {
   projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
   if (preselectedProjectId) projSelect.value = preselectedProjectId;
 
+  const includeSoilRockEl = document.getElementById("rp_includeSoilRock");
+  includeSoilRockEl.addEventListener("change", () => {
+    localStorage.setItem("sh_includeSoilRock", includeSoilRockEl.checked ? "true" : "false");
+    refreshReport();
+  });
+
   async function refreshReport() {
     const pid = projSelect.value;
     if (!pid) { document.getElementById("rp_container").innerHTML = `<div class="empty-state">${t("noProjects")}</div>`; return; }
@@ -908,7 +932,7 @@ function renderReportView(preselectedProjectId) {
       oneOff(watchSurveyItems, pid),
       oneOff(watchActivity, pid),
     ]);
-    const html = buildReportHTML({ project, boreholes, surveyItems, dKey, activities, currentUser: CURRENT_USER, lang: getLang() });
+    const html = buildReportHTML({ project, boreholes, surveyItems, dKey, activities, currentUser: CURRENT_USER, lang: getLang(), includeSoilRockTable: includeSoilRockEl.checked });
     document.getElementById("rp_container").innerHTML = html;
     window.__reportCtx = { project, boreholes, surveyItems, dKey };
     const planEl = document.getElementById("rp_nextPlan");

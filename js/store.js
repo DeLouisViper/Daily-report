@@ -1,6 +1,6 @@
 import {
   db, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
-  collection, query, orderBy, onSnapshot, serverTimestamp,
+  collection, query, orderBy, onSnapshot, serverTimestamp, deleteField,
 } from "./firebase.js";
 
 // ---------- Users ----------
@@ -134,6 +134,14 @@ export async function deleteBorehole(projectId, id, user, label) {
   await deleteDoc(doc(db, "projects", projectId, "boreholes", id));
   await logActivity(projectId, user, "deleted", label);
 }
+// Xóa đúng 1 ngày trong nhật ký khối lượng (không mất dữ liệu các ngày khác).
+export async function resetBoreholeDay(projectId, id, dKey, user, label) {
+  await updateDoc(doc(db, "projects", projectId, "boreholes", id), {
+    [`dailyLog.${dKey}`]: deleteField(),
+    updatedAt: serverTimestamp(),
+  });
+  await logActivity(projectId, user, "updated", `${label}: reset ${dKey}`);
+}
 
 // ---------- Survey items ----------
 export function watchSurveyItems(projectId, cb) {
@@ -156,6 +164,14 @@ export async function updateSurveyItem(projectId, id, data, user, label) {
 export async function deleteSurveyItem(projectId, id, user, label) {
   await deleteDoc(doc(db, "projects", projectId, "surveyItems", id));
   await logActivity(projectId, user, "deleted", label);
+}
+// Xóa đúng 1 ngày trong nhật ký khối lượng (không mất dữ liệu các ngày khác).
+export async function resetSurveyItemDay(projectId, id, dKey, user, label) {
+  await updateDoc(doc(db, "projects", projectId, "surveyItems", id), {
+    [`dailyLog.${dKey}`]: deleteField(),
+    updatedAt: serverTimestamp(),
+  });
+  await logActivity(projectId, user, "updated", `${label}: reset ${dKey}`);
 }
 
 // ---------- Activity log ----------

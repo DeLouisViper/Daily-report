@@ -6,8 +6,8 @@ import {
   getUserDoc, watchUsers, setUserRole,
   watchProjects, getProject, createProject, updateProject, deleteProject, resizeImageToDataUrl, updateNextDayPlan,
   getProjectFullData, importProjectFullData,
-  watchBoreholes, addBorehole, updateBorehole, deleteBorehole,
-  watchSurveyItems, addSurveyItem, updateSurveyItem, deleteSurveyItem,
+  watchBoreholes, addBorehole, updateBorehole, deleteBorehole, resetBoreholeDay,
+  watchSurveyItems, addSurveyItem, updateSurveyItem, deleteSurveyItem, resetSurveyItemDay,
   watchActivity, dateKey, sumDailyLog,
 } from "./store.js";
 import { applyI18n, getLang, setLang, t } from "./i18n.js";
@@ -620,6 +620,7 @@ function boreholeBlockHtml(b) {
       <h4>🕳 ${escapeHtml(b.name || "—")} <span style="color:var(--text-dim); font-weight:500;">(${escapeHtml(b.team || "—")})</span></h4>
       <div class="item-actions">
         <span class="pct-badge ${pctBadgeClass(pct)}">${pct.toFixed(0)}%</span>
+        ${canEdit() ? `<button class="btn btn-ghost btn-sm reset-bh-yesterday" data-i18n="resetYesterday"></button>` : ""}
         ${canEdit() ? `<button class="btn btn-ghost btn-sm reset-bh" data-i18n="resetProgress"></button>` : ""}
         ${canEdit() ? `<button class="btn btn-ghost btn-sm edit-bh" data-i18n="edit"></button>` : ""}
         ${canEdit() ? `<button class="btn btn-danger btn-sm del-bh" data-i18n="delete"></button>` : ""}
@@ -660,6 +661,15 @@ function bindBoreholeBlock(projectId, b) {
     if (confirm(t("resetConfirm"))) {
       showSaveIndicator(true);
       await updateBorehole(projectId, b.id, { dailyLog: {} }, CURRENT_USER, `${b.name}: ${t("resetProgress")}`);
+      showSaveIndicator();
+    }
+  });
+  const resetYesterdayBtn = el.querySelector(".reset-bh-yesterday");
+  if (resetYesterdayBtn) resetYesterdayBtn.addEventListener("click", async () => {
+    if (confirm(t("resetYesterdayConfirm"))) {
+      showSaveIndicator(true);
+      const yKey = dateKey(new Date(Date.now() - 86400000));
+      await resetBoreholeDay(projectId, b.id, yKey, CURRENT_USER, b.name);
       showSaveIndicator();
     }
   });
@@ -768,6 +778,7 @@ function surveyBlockHtml(s) {
       <h4>📍 ${escapeHtml(label)} ${s.assignee ? `<span style="color:var(--text-dim); font-weight:500;">(${escapeHtml(s.assignee)})</span>` : ""}</h4>
       <div class="item-actions">
         <span class="pct-badge ${pctBadgeClass(pct)}">${pct.toFixed(0)}%</span>
+        ${canEdit() ? `<button class="btn btn-ghost btn-sm reset-sv-yesterday" data-i18n="resetYesterday"></button>` : ""}
         ${canEdit() ? `<button class="btn btn-ghost btn-sm reset-sv" data-i18n="resetProgress"></button>` : ""}
         ${canEdit() ? `<button class="btn btn-ghost btn-sm edit-sv" data-i18n="edit"></button>` : ""}
         ${canEdit() ? `<button class="btn btn-danger btn-sm del-sv" data-i18n="delete"></button>` : ""}
@@ -800,6 +811,15 @@ function bindSurveyBlock(projectId, s) {
     if (confirm(t("resetConfirm"))) {
       showSaveIndicator(true);
       await updateSurveyItem(projectId, s.id, { dailyLog: {} }, CURRENT_USER, `${surveyItemLabel(s)}: ${t("resetProgress")}`);
+      showSaveIndicator();
+    }
+  });
+  const resetYesterdayBtn = el.querySelector(".reset-sv-yesterday");
+  if (resetYesterdayBtn) resetYesterdayBtn.addEventListener("click", async () => {
+    if (confirm(t("resetYesterdayConfirm"))) {
+      showSaveIndicator(true);
+      const yKey = dateKey(new Date(Date.now() - 86400000));
+      await resetSurveyItemDay(projectId, s.id, yKey, CURRENT_USER, surveyItemLabel(s));
       showSaveIndicator();
     }
   });

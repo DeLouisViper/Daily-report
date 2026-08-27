@@ -31,6 +31,7 @@ import {
   onSnapshot,
   serverTimestamp,
   Timestamp,
+  deleteField,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const app = initializeApp(firebaseConfig);
@@ -59,4 +60,5 @@ export {
   onSnapshot,
   serverTimestamp,
   Timestamp,
+  deleteField,
 };

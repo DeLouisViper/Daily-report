@@ -1047,8 +1047,8 @@ function renderDrillLogView() {
       <div class="field"><label data-i18n="selectDate"></label><input type="date" id="dl_date" value="${dateKey()}" /></div>
       <div class="field"><label data-i18n="selectMachine"></label><select id="dl_machineFilter"></select></div>
       <button class="btn btn-primary" id="dl_exportPdf" data-i18n="exportPdf"></button>
-      <button class="btn btn-ghost" id="dl_exportRepairLog" data-i18n="exportRepairLog"></button>
-      ${canEdit() ? `<button class="btn btn-ghost" id="dl_addMachine" data-i18n="addMachine"></button>` : ""}
+      <button class="btn btn-primary" id="dl_exportRepairLog" data-i18n="exportRepairLog"></button>
+      ${canEdit() ? `<button class="btn btn-primary" id="dl_addMachine" data-i18n="addMachine"></button>` : ""}
     </div>
     <div id="dl_container"></div>
   `;

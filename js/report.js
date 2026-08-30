@@ -214,6 +214,7 @@ const DRILL_LOG_FIELDS_REPORT = [
   { key: "endOfDay", label: "endOfDay" },
   { key: "breakdownStart", label: "breakdownStart" },
   { key: "repairEnd", label: "repairEnd" },
+  { key: "repairItem", label: "repairItem" },
   { key: "suspensionTime", label: "suspensionTime" },
   { key: "suspensionReason", label: "suspensionReason" },
 ];
@@ -264,6 +265,93 @@ export function buildDrillLogHTML({ project, machines, dKey, currentUser, lang }
     </div>
 
     ${machinesHtml || `<div class="empty-state">—</div>`}
+
+    <div class="sign-row">
+      <div>
+        <div class="role">${t("preparedBy")}</div>
+        <div class="name">${escapeHtml(currentUser?.name || currentUser?.email || "")}</div>
+      </div>
+      <div>
+        <div class="role">${t("checkedBy")}</div>
+        <div class="name">&nbsp;</div>
+      </div>
+      <div>
+        <div class="role">${t("headOfDept")}</div>
+        <div class="name">&nbsp;</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Báo cáo tổng hợp lịch sử sửa chữa: gom tất cả các ngày có ghi nhận hỏng máy /
+// sửa chữa (breakdownStart, repairEnd hoặc repairItem) của 1 máy hoặc tất cả máy,
+// sắp xếp theo ngày, để phục vụ việc kiểm soát bảo trì thiết bị theo thời gian
+// (khác với buildDrillLogHTML vốn chỉ hiển thị 1 ngày cho tất cả máy).
+export function buildRepairHistoryHTML({ project, machines, currentUser, lang, machineLabel }) {
+  const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
+
+  const rows = [];
+  (machines || []).forEach((m) => {
+    const logs = m.dailyLogs || {};
+    Object.keys(logs).sort().forEach((dKey) => {
+      const d = logs[dKey] || {};
+      const hasRepairInfo = (d.repairItem && String(d.repairItem).trim()) || d.breakdownStart || d.repairEnd;
+      if (!hasRepairInfo) return;
+      rows.push({
+        dKey,
+        machine: m.name || "—",
+        operator: d.operator || "",
+        breakdownStart: d.breakdownStart || "",
+        repairEnd: d.repairEnd || "",
+        repairItem: d.repairItem || "",
+        suspensionReason: d.suspensionReason || "",
+      });
+    });
+  });
+  rows.sort((a, b) => a.dKey === b.dKey ? a.machine.localeCompare(b.machine, undefined, { numeric: true, sensitivity: "base" }) : a.dKey.localeCompare(b.dKey));
+
+  const rowsHtml = rows.map((r) => `<tr>
+    <td class="num">${r.dKey.split("-").reverse().join("/")}</td>
+    <td>${escapeHtml(r.machine)}</td>
+    <td>${escapeHtml(r.operator || "—")}</td>
+    <td class="num">${escapeHtml(r.breakdownStart || "—")}</td>
+    <td class="num">${escapeHtml(r.repairEnd || "—")}</td>
+    <td>${escapeHtml(r.repairItem || "—")}</td>
+    <td>${escapeHtml(r.suspensionReason || "—")}</td>
+  </tr>`).join("");
+
+  return `
+  <div class="report-page" id="repairLogPrintArea">
+    <div class="report-head">
+      <div class="brand">
+        <div class="mark">DR</div>
+        <div>
+          <div class="name">Daily Report</div>
+          <div class="tag">${lang === "vi" ? "Hệ thống quản lý quy trình khảo sát" : "Field survey workflow management system"}</div>
+        </div>
+      </div>
+      <div class="meta">
+        <div><b>${t("exportedAt")}:</b> ${exportedAt}</div>
+      </div>
+    </div>
+
+    <div class="report-title">${t("repairLogTitle")}</div>
+
+    <div class="report-section">
+      <table class="report-info-table report-table-closed">
+        <tr><td>${t("project")}</td><td>${escapeHtml(project?.name || "—")}</td></tr>
+        <tr><td>${t("machine")}</td><td>${escapeHtml(machineLabel || t("allMachines"))}</td></tr>
+      </table>
+    </div>
+
+    <div class="report-section">
+      <table class="report-table-closed">
+        <thead><tr>
+          <th>${t("reportDate")}</th><th>${t("machine")}</th><th>${t("operator")}</th><th>${t("breakdownStart")}</th><th>${t("repairEnd")}</th><th>${t("repairItem")}</th><th>${t("suspensionReason")}</th>
+        </tr></thead>
+        <tbody>${rowsHtml || `<tr><td colspan="7" style="text-align:center;color:#888;">${t("noRepairRecords")}</td></tr>`}</tbody>
+      </table>
+    </div>
 
     <div class="sign-row">
       <div>

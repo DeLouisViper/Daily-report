@@ -9,10 +9,11 @@ import {
   watchBoreholes, addBorehole, updateBorehole, deleteBorehole, resetBoreholeDay,
   watchSurveyItems, addSurveyItem, updateSurveyItem, deleteSurveyItem, resetSurveyItemDay,
   watchActivity, dateKey, sumDailyLog,
+  watchDrillingMachines, addDrillingMachine, updateDrillingMachine, deleteDrillingMachine, saveDrillingMachineDayLog, updateDrillingMachineField,
 } from "./store.js";
 import { applyI18n, getLang, setLang, t } from "./i18n.js";
 import { initTheme, toggleTheme, getTheme, applyTheme } from "./theme.js";
-import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, slugify } from "./report.js";
+import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, slugify } from "./report.js";
 
 initTheme();
 applyI18n();
@@ -96,6 +97,7 @@ function navigateTo(view, param) {
   else if (view === "projects") renderProjectsList();
   else if (view === "project-detail") renderProjectDetail(param);
   else if (view === "report") renderReportView(param);
+  else if (view === "drilllog") renderDrillLogView(param);
   else if (view === "activity") renderActivityView();
   else if (view === "settings") renderSettingsView();
 }
@@ -1008,6 +1010,200 @@ function renderReportView(preselectedProjectId) {
 function oneOff(watchFn, id) {
   return new Promise((resolve) => {
     const unsub = watchFn(id, (data) => { resolve(data); unsub(); });
+  });
+}
+
+// ============================================================
+// DRILLING MACHINE DAILY LOG
+// ============================================================
+const DRILL_LOG_FIELDS = [
+  { key: "operator", label: "operator", type: "text" },
+  { key: "engineer", label: "engineerInCharge", type: "text" },
+  { key: "morningStart", label: "morningStart", type: "time" },
+  { key: "lunchBreak", label: "lunchBreak", type: "time" },
+  { key: "afternoonStart", label: "afternoonStart", type: "time" },
+  { key: "endOfDay", label: "endOfDay", type: "time" },
+  { key: "breakdownStart", label: "breakdownStart", type: "time" },
+  { key: "repairEnd", label: "repairEnd", type: "time" },
+  { key: "suspensionTime", label: "suspensionTime", type: "time" },
+  { key: "suspensionReason", label: "suspensionReason", type: "text" },
+];
+
+function getMachineDayLog(m, dKey) {
+  const logs = m.dailyLogs || {};
+  if (logs[dKey]) return { data: logs[dKey], carried: false };
+  const prevDates = Object.keys(logs).filter((d) => d < dKey).sort();
+  if (prevDates.length) {
+    return { data: { ...logs[prevDates[prevDates.length - 1]] }, carried: true };
+  }
+  return { data: {}, carried: false };
+}
+
+function renderDrillLogView() {
+  mainView.innerHTML = topbarHtml("drillLogTitle") + `
+    <div class="report-toolbar">
+      <div class="field"><label data-i18n="selectProject"></label><select id="dl_project"></select></div>
+      <div class="field"><label data-i18n="selectDate"></label><input type="date" id="dl_date" value="${dateKey()}" /></div>
+      <div class="field"><label data-i18n="selectMachine"></label><select id="dl_machineFilter"></select></div>
+      <button class="btn btn-primary" id="dl_exportPdf" data-i18n="exportPdf"></button>
+      ${canEdit() ? `<button class="btn btn-ghost" id="dl_addMachine" data-i18n="addMachine"></button>` : ""}
+    </div>
+    <div id="dl_container"></div>
+  `;
+  bindTopbar();
+
+  const projSelect = document.getElementById("dl_project");
+  const dateInput = document.getElementById("dl_date");
+  const machineFilter = document.getElementById("dl_machineFilter");
+  let currentProject = null;
+  let currentMachines = [];
+
+  function fillProjects() {
+    projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+  }
+  function fillMachineFilter() {
+    const prev = machineFilter.value;
+    machineFilter.innerHTML = `<option value="">${t("allMachines")}</option>` + currentMachines.map((m) => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join("");
+    if ([...machineFilter.options].some((o) => o.value === prev)) machineFilter.value = prev;
+  }
+  async function renderCards() {
+    const container = document.getElementById("dl_container");
+    if (!container) return;
+    const dKey = dateInput.value || dateKey();
+    const filterId = machineFilter.value;
+    const machines = filterId ? currentMachines.filter((m) => m.id === filterId) : currentMachines;
+    if (!machines.length) { container.innerHTML = `<div class="empty-state">${t("noProjects")}</div>`; return; }
+    container.innerHTML = machines.map((m) => drillMachineCardHtml(m, dKey)).join("");
+    machines.forEach((m) => bindDrillMachineCard(currentProject.id, m, dKey));
+    // Lưu lại bản kế thừa của những máy chưa có dữ liệu ngày này, để lần sau không phải tính lại.
+    machines.forEach(async (m) => {
+      const { data, carried } = getMachineDayLog(m, dKey);
+      if (carried && Object.keys(data).length) {
+        await saveDrillingMachineDayLog(currentProject.id, m.id, dKey, data, CURRENT_USER, m.name);
+      }
+    });
+  }
+  function loadMachines(pid) {
+    const unsub = watchDrillingMachines(pid, (machines) => {
+      currentMachines = machines;
+      fillMachineFilter();
+      renderCards();
+    });
+    currentProjectUnsubs.push(unsub);
+  }
+  async function loadProject(pid) {
+    cleanupProjectWatchers();
+    currentProject = await getProject(pid);
+    loadMachines(pid);
+  }
+
+  projSelect.addEventListener("change", () => loadProject(projSelect.value));
+  dateInput.addEventListener("change", renderCards);
+  machineFilter.addEventListener("change", renderCards);
+  const addBtn = document.getElementById("dl_addMachine");
+  if (addBtn) addBtn.addEventListener("click", () => openDrillMachineModal(currentProject.id));
+  document.getElementById("dl_exportPdf").addEventListener("click", async () => {
+    const btn = document.getElementById("dl_exportPdf");
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = "…";
+    try {
+      const dKey = dateInput.value || dateKey();
+      const filterId = machineFilter.value;
+      const machines = filterId ? currentMachines.filter((m) => m.id === filterId) : currentMachines;
+      const html = buildDrillLogHTML({ project: currentProject, machines, dKey, currentUser: CURRENT_USER, lang: getLang() });
+      const holder = document.createElement("div");
+      holder.id = "drillLogPrintAreaHolder";
+      holder.style.position = "fixed";
+      holder.style.top = "0";
+      holder.style.left = "-99999px";
+      holder.innerHTML = html;
+      document.body.appendChild(holder);
+      const name = slugify(currentProject?.name);
+      await exportReportToPdf("drillLogPrintArea", `${name}_drilllog_${dKey}.pdf`);
+      document.body.removeChild(holder);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  });
+
+  if (projectsCache.length) {
+    fillProjects();
+    loadProject(projSelect.value);
+  } else {
+    const unsub = watchProjects((projects) => {
+      projectsCache = projects;
+      fillProjects();
+      loadProject(projSelect.value);
+    });
+    currentProjectUnsubs.push(unsub);
+  }
+}
+
+function drillMachineCardHtml(m, dKey) {
+  const { data, carried } = getMachineDayLog(m, dKey);
+  const fieldsHtml = DRILL_LOG_FIELDS.map((f) => `
+    <div class="field">
+      <label data-i18n="${f.label}"></label>
+      <input type="${f.type}" class="dl-field" data-key="${f.key}" value="${escapeAttr(data[f.key])}" ${canEdit() ? "" : "disabled"} />
+    </div>`).join("");
+  return `<div class="card item-block" data-id="${m.id}">
+    <div class="item-head">
+      <h4>⛏ ${escapeHtml(m.name || "—")}</h4>
+      <div class="item-actions">
+        ${canEdit() ? `<button class="btn btn-ghost btn-sm edit-dm" data-i18n="edit"></button>` : ""}
+        ${canEdit() ? `<button class="btn btn-danger btn-sm del-dm" data-i18n="delete"></button>` : ""}
+      </div>
+    </div>
+    ${carried && Object.keys(data).length ? `<p style="font-size:12px; color:var(--text-dim); margin:0 0 10px;">↺ ${t("carriedForwardNote")}</p>` : ""}
+    <div class="field-row">${fieldsHtml}</div>
+  </div>`;
+}
+function bindDrillMachineCard(projectId, m, dKey) {
+  const el = document.querySelector(`.item-block[data-id="${m.id}"]`);
+  if (!el) return;
+  applyI18n(el);
+  const editBtn = el.querySelector(".edit-dm");
+  if (editBtn) editBtn.addEventListener("click", () => openDrillMachineModal(projectId, m));
+  const delBtn = el.querySelector(".del-dm");
+  if (delBtn) delBtn.addEventListener("click", async () => {
+    if (confirm(t("deleteMachineConfirm"))) await deleteDrillingMachine(projectId, m.id, CURRENT_USER, m.name);
+  });
+  el.querySelectorAll(".dl-field").forEach((input) => {
+    input.addEventListener("change", async () => {
+      showSaveIndicator(true);
+      await updateDrillingMachineField(projectId, m.id, dKey, input.dataset.key, input.value, CURRENT_USER, m.name);
+      showSaveIndicator();
+    });
+  });
+}
+function openDrillMachineModal(projectId, m) {
+  const editing = !!m;
+  const modalHtml = `
+  <div class="modal-backdrop" id="dmModalBackdrop">
+    <div class="modal">
+      <div class="modal-head"><h3 data-i18n="machine"></h3><button class="icon-btn" id="closeDmModal">✕</button></div>
+      <div class="field"><label data-i18n="machineName"></label><input id="dm_name" data-i18n-placeholder="machineNamePlaceholder" value="${escapeAttr(m?.name)}" /></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="dm_cancel" data-i18n="cancel"></button>
+        <button class="btn btn-primary" id="dm_save" data-i18n="save"></button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML("beforeend", modalHtml);
+  applyI18n(document.getElementById("dmModalBackdrop"));
+  const close = () => document.getElementById("dmModalBackdrop").remove();
+  document.getElementById("closeDmModal").addEventListener("click", close);
+  document.getElementById("dm_cancel").addEventListener("click", close);
+  document.getElementById("dm_save").addEventListener("click", async () => {
+    const name = document.getElementById("dm_name").value.trim();
+    if (!name) return;
+    showSaveIndicator(true);
+    if (editing) await updateDrillingMachine(projectId, m.id, { name }, CURRENT_USER, name);
+    else await addDrillingMachine(projectId, { name }, CURRENT_USER);
+    showSaveIndicator();
+    close();
   });
 }
 

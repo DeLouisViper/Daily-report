@@ -192,6 +192,45 @@ export function watchActivity(projectId, cb, max = 100) {
   return onSnapshot(q, (snap) => cb(snap.docs.slice(0, max).map((d) => ({ id: d.id, ...d.data() }))));
 }
 
+// ---------- Drilling machines (Nhật ký máy khoan) ----------
+export function watchDrillingMachines(projectId, cb) {
+  const q = query(collection(db, "projects", projectId, "drillingMachines"), orderBy("createdAt", "asc"));
+  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+}
+export async function addDrillingMachine(projectId, data, user) {
+  await addDoc(collection(db, "projects", projectId, "drillingMachines"), {
+    ...data,
+    dailyLogs: {},
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await logActivity(projectId, user, "created", `Máy khoan ${data.name}`);
+}
+export async function updateDrillingMachine(projectId, id, data, user, label) {
+  await updateDoc(doc(db, "projects", projectId, "drillingMachines", id), { ...data, updatedAt: serverTimestamp() });
+  await logActivity(projectId, user, "updated", label);
+}
+export async function deleteDrillingMachine(projectId, id, user, label) {
+  await deleteDoc(doc(db, "projects", projectId, "drillingMachines", id));
+  await logActivity(projectId, user, "deleted", label);
+}
+// Lưu nhật ký của 1 ngày cho 1 máy khoan (không đụng tới các ngày khác).
+export async function saveDrillingMachineDayLog(projectId, id, dKey, logData, user, label) {
+  await updateDoc(doc(db, "projects", projectId, "drillingMachines", id), {
+    [`dailyLogs.${dKey}`]: logData,
+    updatedAt: serverTimestamp(),
+  });
+  await logActivity(projectId, user, "updated", `${label} (${dKey})`);
+}
+// Lưu đúng 1 trường trong nhật ký của 1 ngày (tránh ghi đè các trường khác).
+export async function updateDrillingMachineField(projectId, id, dKey, field, value, user, label) {
+  await updateDoc(doc(db, "projects", projectId, "drillingMachines", id), {
+    [`dailyLogs.${dKey}.${field}`]: value,
+    updatedAt: serverTimestamp(),
+  });
+  await logActivity(projectId, user, "updated", `${label} (${dKey})`);
+}
+
 // ---------- Helpers ----------
 export function dateKey(d = new Date()) {
   const y = d.getFullYear();

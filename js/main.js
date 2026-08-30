@@ -13,7 +13,7 @@ import {
 } from "./store.js";
 import { applyI18n, getLang, setLang, t } from "./i18n.js";
 import { initTheme, toggleTheme, getTheme, applyTheme } from "./theme.js";
-import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, slugify } from "./report.js";
+import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, buildRepairHistoryHTML, slugify } from "./report.js";
 
 initTheme();
 applyI18n();
@@ -526,7 +526,7 @@ async function renderProjectDetail(projectId) {
   const delBtnEl = document.getElementById("delProjBtn");
   if (delBtnEl) delBtnEl.addEventListener("click", async () => {
     if (!isAdmin()) { alert(t("onlyAdminDelete")); return; }
-    if (confirm(t("deleteConfirm"))) {
+    if (await showConfirmModal(t("deleteConfirm"))) {
       await deleteProject(projectId);
       navigateTo("projects");
     }
@@ -656,11 +656,11 @@ function bindBoreholeBlock(projectId, b) {
   if (editBtn) editBtn.addEventListener("click", () => openBoreholeModal(projectId, b));
   const delBtn = el.querySelector(".del-bh");
   if (delBtn) delBtn.addEventListener("click", async () => {
-    if (confirm(t("deleteConfirm"))) await deleteBorehole(projectId, b.id, CURRENT_USER, b.name);
+    if (await showConfirmModal(t("deleteConfirm"))) await deleteBorehole(projectId, b.id, CURRENT_USER, b.name);
   });
   const resetBtn = el.querySelector(".reset-bh");
   if (resetBtn) resetBtn.addEventListener("click", async () => {
-    if (confirm(t("resetConfirm"))) {
+    if (await showConfirmModal(t("resetConfirm"))) {
       showSaveIndicator(true);
       await updateBorehole(projectId, b.id, { dailyLog: {} }, CURRENT_USER, `${b.name}: ${t("resetProgress")}`);
       showSaveIndicator();
@@ -668,7 +668,7 @@ function bindBoreholeBlock(projectId, b) {
   });
   const resetYesterdayBtn = el.querySelector(".reset-bh-yesterday");
   if (resetYesterdayBtn) resetYesterdayBtn.addEventListener("click", async () => {
-    if (confirm(t("resetYesterdayConfirm"))) {
+    if (await showConfirmModal(t("resetYesterdayConfirm"))) {
       showSaveIndicator(true);
       const yKey = dateKey(new Date(Date.now() - 86400000));
       await resetBoreholeDay(projectId, b.id, yKey, CURRENT_USER, b.name);
@@ -806,11 +806,11 @@ function bindSurveyBlock(projectId, s) {
   if (editBtn) editBtn.addEventListener("click", () => openSurveyModal(projectId, s));
   const delBtn = el.querySelector(".del-sv");
   if (delBtn) delBtn.addEventListener("click", async () => {
-    if (confirm(t("deleteConfirm"))) await deleteSurveyItem(projectId, s.id, CURRENT_USER, surveyItemLabel(s));
+    if (await showConfirmModal(t("deleteConfirm"))) await deleteSurveyItem(projectId, s.id, CURRENT_USER, surveyItemLabel(s));
   });
   const resetBtn = el.querySelector(".reset-sv");
   if (resetBtn) resetBtn.addEventListener("click", async () => {
-    if (confirm(t("resetConfirm"))) {
+    if (await showConfirmModal(t("resetConfirm"))) {
       showSaveIndicator(true);
       await updateSurveyItem(projectId, s.id, { dailyLog: {} }, CURRENT_USER, `${surveyItemLabel(s)}: ${t("resetProgress")}`);
       showSaveIndicator();
@@ -818,7 +818,7 @@ function bindSurveyBlock(projectId, s) {
   });
   const resetYesterdayBtn = el.querySelector(".reset-sv-yesterday");
   if (resetYesterdayBtn) resetYesterdayBtn.addEventListener("click", async () => {
-    if (confirm(t("resetYesterdayConfirm"))) {
+    if (await showConfirmModal(t("resetYesterdayConfirm"))) {
       showSaveIndicator(true);
       const yKey = dateKey(new Date(Date.now() - 86400000));
       await resetSurveyItemDay(projectId, s.id, yKey, CURRENT_USER, surveyItemLabel(s));
@@ -1025,6 +1025,7 @@ const DRILL_LOG_FIELDS = [
   { key: "endOfDay", label: "endOfDay", type: "time" },
   { key: "breakdownStart", label: "breakdownStart", type: "time" },
   { key: "repairEnd", label: "repairEnd", type: "time" },
+  { key: "repairItem", label: "repairItem", type: "textarea" },
   { key: "suspensionTime", label: "suspensionTime", type: "time" },
   { key: "suspensionReason", label: "suspensionReason", type: "text" },
 ];
@@ -1046,6 +1047,7 @@ function renderDrillLogView() {
       <div class="field"><label data-i18n="selectDate"></label><input type="date" id="dl_date" value="${dateKey()}" /></div>
       <div class="field"><label data-i18n="selectMachine"></label><select id="dl_machineFilter"></select></div>
       <button class="btn btn-primary" id="dl_exportPdf" data-i18n="exportPdf"></button>
+      <button class="btn btn-ghost" id="dl_exportRepairLog" data-i18n="exportRepairLog"></button>
       ${canEdit() ? `<button class="btn btn-ghost" id="dl_addMachine" data-i18n="addMachine"></button>` : ""}
     </div>
     <div id="dl_container"></div>
@@ -1083,14 +1085,31 @@ function renderDrillLogView() {
       }
     });
   }
+  // Trên điện thoại, bộ chọn giờ gốc (native <input type="time">) sẽ tự động
+  // đóng lại nếu phần tử input bị hủy/tạo lại giữa lúc đang chọn (ví dụ vừa
+  // chỉnh xong giờ thì component bị vẽ lại do Firestore báo có thay đổi —
+  // chính là giá trị vừa lưu). Vì vậy khi đang có 1 ô .dl-field được focus,
+  // ta hoãn việc vẽ lại danh sách cho đến khi người dùng rời khỏi ô đó.
+  let pendingRerender = false;
   function loadMachines(pid) {
     const unsub = watchDrillingMachines(pid, (machines) => {
       currentMachines = machines;
       fillMachineFilter();
+      const active = document.activeElement;
+      if (active && active.classList && active.classList.contains("dl-field")) {
+        pendingRerender = true;
+        return;
+      }
       renderCards();
     });
     currentProjectUnsubs.push(unsub);
   }
+  document.getElementById("dl_container").addEventListener("focusout", (e) => {
+    if (e.target?.classList?.contains("dl-field") && pendingRerender) {
+      pendingRerender = false;
+      renderCards();
+    }
+  });
   async function loadProject(pid) {
     cleanupProjectWatchers();
     currentProject = await getProject(pid);
@@ -1127,6 +1146,31 @@ function renderDrillLogView() {
       btn.textContent = orig;
     }
   });
+  document.getElementById("dl_exportRepairLog").addEventListener("click", async () => {
+    const btn = document.getElementById("dl_exportRepairLog");
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = "…";
+    try {
+      const filterId = machineFilter.value;
+      const machines = filterId ? currentMachines.filter((m) => m.id === filterId) : currentMachines;
+      const machineLabel = filterId ? (currentMachines.find((m) => m.id === filterId)?.name || "") : t("allMachines");
+      const html = buildRepairHistoryHTML({ project: currentProject, machines, currentUser: CURRENT_USER, lang: getLang(), machineLabel });
+      const holder = document.createElement("div");
+      holder.id = "repairLogPrintAreaHolder";
+      holder.style.position = "fixed";
+      holder.style.top = "0";
+      holder.style.left = "-99999px";
+      holder.innerHTML = html;
+      document.body.appendChild(holder);
+      const name = slugify(currentProject?.name);
+      await exportReportToPdf("repairLogPrintArea", `${name}_suachua_${dateKey()}.pdf`);
+      document.body.removeChild(holder);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  });
 
   if (projectsCache.length) {
     fillProjects();
@@ -1143,11 +1187,16 @@ function renderDrillLogView() {
 
 function drillMachineCardHtml(m, dKey) {
   const { data, carried } = getMachineDayLog(m, dKey);
-  const fieldsHtml = DRILL_LOG_FIELDS.map((f) => `
+  const fieldsHtml = DRILL_LOG_FIELDS.map((f) => {
+    const control = f.type === "textarea"
+      ? `<textarea class="dl-field" data-key="${f.key}" rows="2" ${canEdit() ? "" : "disabled"}>${escapeHtml(data[f.key] ?? "")}</textarea>`
+      : `<input type="${f.type}" class="dl-field" data-key="${f.key}" value="${escapeAttr(data[f.key])}" ${canEdit() ? "" : "disabled"} />`;
+    return `
     <div class="field">
       <label data-i18n="${f.label}"></label>
-      <input type="${f.type}" class="dl-field" data-key="${f.key}" value="${escapeAttr(data[f.key])}" ${canEdit() ? "" : "disabled"} />
-    </div>`).join("");
+      ${control}
+    </div>`;
+  }).join("");
   return `<div class="card item-block" data-id="${m.id}">
     <div class="item-head">
       <h4>⛏ ${escapeHtml(m.name || "—")}</h4>
@@ -1168,7 +1217,7 @@ function bindDrillMachineCard(projectId, m, dKey) {
   if (editBtn) editBtn.addEventListener("click", () => openDrillMachineModal(projectId, m));
   const delBtn = el.querySelector(".del-dm");
   if (delBtn) delBtn.addEventListener("click", async () => {
-    if (confirm(t("deleteMachineConfirm"))) await deleteDrillingMachine(projectId, m.id, CURRENT_USER, m.name);
+    if (await showConfirmModal(t("deleteMachineConfirm"))) await deleteDrillingMachine(projectId, m.id, CURRENT_USER, m.name);
   });
   el.querySelectorAll(".dl-field").forEach((input) => {
     input.addEventListener("change", async () => {
@@ -1442,6 +1491,41 @@ function renderSettingsView() {
     });
     currentProjectUnsubs.push(unsub);
   }
+}
+
+// ============================================================
+// CONFIRM MODAL
+// ============================================================
+// Thay cho window.confirm(): một số trình duyệt trong app (Zalo, Messenger...)
+// xử lý confirm()/alert() không đúng chuẩn (có thể tự động xác nhận dù người
+// dùng bấm Hủy), khiến các nút xóa/đặt lại thực thi ngay cả khi đã bấm Hủy.
+// Dùng modal tự dựng để đảm bảo Hủy/Đồng ý luôn hoạt động chính xác.
+function showConfirmModal(message) {
+  return new Promise((resolve) => {
+    const html = `
+    <div class="modal-backdrop" id="confirmModalBackdrop">
+      <div class="modal" style="max-width:420px;">
+        <p style="margin:0 0 20px; font-size:14.5px; line-height:1.5;">${escapeHtml(message)}</p>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="confirmModalCancel" data-i18n="cancel"></button>
+          <button class="btn btn-danger" id="confirmModalOk" data-i18n="confirmBtn"></button>
+        </div>
+      </div>
+    </div>`;
+    document.body.insertAdjacentHTML("beforeend", html);
+    const backdrop = document.getElementById("confirmModalBackdrop");
+    applyI18n(backdrop);
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      backdrop.remove();
+      resolve(result);
+    };
+    document.getElementById("confirmModalCancel").addEventListener("click", () => finish(false));
+    document.getElementById("confirmModalOk").addEventListener("click", () => finish(true));
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) finish(false); });
+  });
 }
 
 // ============================================================

@@ -96,6 +96,16 @@ label { font-size: 12.5px; color: var(--text-dim); display: block; margin-bottom
 .field { margin-bottom: 14px; }
 .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 
+.time-field-wrap { position: relative; }
+.time-field-wrap input[type="time"] { padding-right: 34px; }
+.dl-field-clear {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--bg-elev); color: var(--text-dim); font-size: 11px; line-height: 1;
+  display: grid; place-items: center; padding: 0;
+}
+.dl-field-clear:hover { color: var(--danger); border-color: var(--danger); background: rgba(255,0,85,.12); }
+
 /* ---------- Auth screen ---------- */
 .auth-wrap {
   min-height: 100vh;
@@ -388,5 +398,11 @@ tr:last-child td { border-bottom: none; }
   .report-toolbar .field { min-width: 0; width: 100%; }
   .analysis-grid { grid-template-columns: repeat(2, 1fr); }
   .chip { font-size: 12px; padding: 7px 12px; }
+
+  /* Các ô nhập (giờ, text...) xếp thành 1 cột trên điện thoại để không bị
+     nhíu/chật vào nhau — trên màn hẹp 2 cột rất dễ khiến nhãn & giá trị đè lên nhau. */
+  .field-row { grid-template-columns: 1fr; }
+  .card { padding: 14px; }
+  .item-block .field-row { gap: 14px; }
 }
 

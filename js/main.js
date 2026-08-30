@@ -1188,9 +1188,20 @@ function renderDrillLogView() {
 function drillMachineCardHtml(m, dKey) {
   const { data, carried } = getMachineDayLog(m, dKey);
   const fieldsHtml = DRILL_LOG_FIELDS.map((f) => {
-    const control = f.type === "textarea"
-      ? `<textarea class="dl-field" data-key="${f.key}" rows="2" ${canEdit() ? "" : "disabled"}>${escapeHtml(data[f.key] ?? "")}</textarea>`
-      : `<input type="${f.type}" class="dl-field" data-key="${f.key}" value="${escapeAttr(data[f.key])}" ${canEdit() ? "" : "disabled"} />`;
+    let control;
+    if (f.type === "textarea") {
+      control = `<textarea class="dl-field" data-key="${f.key}" rows="2" ${canEdit() ? "" : "disabled"}>${escapeHtml(data[f.key] ?? "")}</textarea>`;
+    } else if (f.type === "time") {
+      // Nút "✕" riêng để xóa giờ một cách chắc chắn: nút "Đặt lại" của bộ chọn
+      // giờ gốc trên điện thoại có thể không xóa về rỗng thật sự tùy máy/trình
+      // duyệt, khiến báo cáo lỡ hiện ra một mốc giờ không có thật (VD 00:00).
+      control = `<div class="time-field-wrap">
+          <input type="time" class="dl-field" data-key="${f.key}" value="${escapeAttr(data[f.key])}" ${canEdit() ? "" : "disabled"} />
+          ${canEdit() ? `<button type="button" class="dl-field-clear" data-key="${f.key}" title="${t("clearTime")}" aria-label="${t("clearTime")}">✕</button>` : ""}
+        </div>`;
+    } else {
+      control = `<input type="${f.type}" class="dl-field" data-key="${f.key}" value="${escapeAttr(data[f.key])}" ${canEdit() ? "" : "disabled"} />`;
+    }
     return `
     <div class="field">
       <label data-i18n="${f.label}"></label>
@@ -1224,6 +1235,14 @@ function bindDrillMachineCard(projectId, m, dKey) {
       showSaveIndicator(true);
       await updateDrillingMachineField(projectId, m.id, dKey, input.dataset.key, input.value, CURRENT_USER, m.name);
       showSaveIndicator();
+    });
+  });
+  el.querySelectorAll(".dl-field-clear").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = btn.previousElementSibling;
+      if (!input || !input.classList.contains("dl-field")) return;
+      input.value = "";
+      input.dispatchEvent(new Event("change"));
     });
   });
 }

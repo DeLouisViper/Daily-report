@@ -102,7 +102,7 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
        <table class="report-table-closed">
          <thead><tr><th>${t("boreholeName")}</th><th>${t("coordN")}</th><th>${t("coordE")}</th><th>${t("elevation")}</th><th>${t("waterLevel")}</th></tr></thead>
          <tbody>${boreholeRows.map((r) => `<tr>
-           <td>${escapeHtml(r.label)}</td>
+           <td><span class="${statusOf(r.pct).colorCls}">${escapeHtml(r.label)}</span></td>
            <td class="num">${escapeHtml(r.coordN || "—")}</td>
            <td class="num">${escapeHtml(r.coordE || "—")}</td>
            <td class="num">${escapeHtml(r.elevation || "—")}</td>
@@ -118,7 +118,7 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
        <table class="report-table-closed">
          <thead><tr><th>${t("borholeNameCol")}</th><th>${t("totalQtyCol")} (m)</th><th>${t("soilM")}</th><th>${t("rockM")}</th><th>${t("note")}</th></tr></thead>
          <tbody>${boreholeRows.map((r) => `<tr>
-           <td>${escapeHtml(r.label)}</td>
+           <td><span class="${statusOf(r.pct).colorCls}">${escapeHtml(r.label)}</span></td>
            <td class="num">${r.total.toLocaleString()}</td>
            <td class="num">${r.soilM != null && r.soilM !== "" ? r.soilM : "—"}</td>
            <td class="num">${r.rockM != null && r.rockM !== "" ? r.rockM : "—"}</td>
@@ -187,6 +187,83 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
     ${project.siteImageUrl ? `<div class="report-section"><div class="section-title">${t("siteImage")}</div><img class="report-photo" src="${project.siteImageUrl}" /></div>` : ""}
 
     ${nextPlanHtml}
+
+    <div class="sign-row">
+      <div>
+        <div class="role">${t("preparedBy")}</div>
+        <div class="name">${escapeHtml(currentUser?.name || currentUser?.email || "")}</div>
+      </div>
+      <div>
+        <div class="role">${t("checkedBy")}</div>
+        <div class="name">&nbsp;</div>
+      </div>
+      <div>
+        <div class="role">${t("headOfDept")}</div>
+        <div class="name">&nbsp;</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+const DRILL_LOG_FIELDS_REPORT = [
+  { key: "operator", label: "operator" },
+  { key: "engineer", label: "engineerInCharge" },
+  { key: "morningStart", label: "morningStart" },
+  { key: "lunchBreak", label: "lunchBreak" },
+  { key: "afternoonStart", label: "afternoonStart" },
+  { key: "endOfDay", label: "endOfDay" },
+  { key: "breakdownStart", label: "breakdownStart" },
+  { key: "repairEnd", label: "repairEnd" },
+  { key: "suspensionTime", label: "suspensionTime" },
+  { key: "suspensionReason", label: "suspensionReason" },
+];
+function getMachineDayLogRaw(m, dKey) {
+  const logs = m.dailyLogs || {};
+  if (logs[dKey]) return logs[dKey];
+  const prevDates = Object.keys(logs).filter((d) => d < dKey).sort();
+  if (prevDates.length) return logs[prevDates[prevDates.length - 1]];
+  return {};
+}
+
+export function buildDrillLogHTML({ project, machines, dKey, currentUser, lang }) {
+  const dateDisplay = dKey.split("-").reverse().join("/");
+  const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
+
+  const machinesHtml = (machines || []).map((m) => {
+    const data = getMachineDayLogRaw(m, dKey);
+    const rows = DRILL_LOG_FIELDS_REPORT.map((f) => `<tr><td>${t(f.label)}</td><td>${escapeHtml(data[f.key] || "—")}</td></tr>`).join("");
+    return `<div class="report-section">
+      <div class="section-title">⛏ ${escapeHtml(m.name || "—")}</div>
+      <table class="report-info-table report-table-closed">${rows}</table>
+    </div>`;
+  }).join("");
+
+  return `
+  <div class="report-page" id="drillLogPrintArea">
+    <div class="report-head">
+      <div class="brand">
+        <div class="mark">DR</div>
+        <div>
+          <div class="name">Daily Report</div>
+          <div class="tag">${lang === "vi" ? "Hệ thống quản lý quy trình khảo sát" : "Field survey workflow management system"}</div>
+        </div>
+      </div>
+      <div class="meta">
+        <div><b>${t("reportDate")}:</b> ${dateDisplay}</div>
+        <div><b>${t("exportedAt")}:</b> ${exportedAt}</div>
+      </div>
+    </div>
+
+    <div class="report-title">${t("drillLogTitle")}</div>
+
+    <div class="report-section">
+      <table class="report-info-table report-table-closed">
+        <tr><td>${t("project")}</td><td>${escapeHtml(project?.name || "—")}</td></tr>
+        <tr><td>${t("location")}</td><td>${escapeHtml(project?.location || "—")}</td></tr>
+      </table>
+    </div>
+
+    ${machinesHtml || `<div class="empty-state">—</div>`}
 
     <div class="sign-row">
       <div>

@@ -29,6 +29,10 @@ service cloud.firestore {
         allow read: if isSignedIn();
         allow write: if canEdit();
       }
+      match /drillingMachines/{id} {
+        allow read: if isSignedIn();
+        allow write: if canEdit();
+      }
       match /activity/{id} {
         allow read: if isSignedIn();
         allow create: if isSignedIn();

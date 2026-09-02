@@ -1102,7 +1102,7 @@ function renderDrillLogView() {
     const dKey = dateInput.value || dateKey();
     const filterId = machineFilter.value;
     const machines = filterId ? currentMachines.filter((m) => m.id === filterId) : currentMachines;
-    if (!machines.length) { container.innerHTML = `<div class="empty-state">${t("noProjects")}</div>`; return; }
+    if (!machines.length) { container.innerHTML = `<div class="empty-state">${t("noMachinesYet")}</div>`; return; }
     container.innerHTML = machines.map((m) => drillMachineCardHtml(m, dKey)).join("");
     machines.forEach((m) => bindDrillMachineCard(currentProject.id, m, dKey));
     // Lưu lại bản kế thừa của những máy chưa có dữ liệu ngày này, để lần sau không phải tính lại.

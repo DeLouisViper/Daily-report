@@ -10,13 +10,25 @@ import {
   watchSurveyItems, addSurveyItem, updateSurveyItem, deleteSurveyItem, resetSurveyItemDay,
   watchActivity, dateKey, sumDailyLog,
   watchDrillingMachines, addDrillingMachine, updateDrillingMachine, deleteDrillingMachine, saveDrillingMachineDayLog, updateDrillingMachineField,
+  watchEquipmentLogs, getLatestEquipmentLog, createEquipmentCheckout, updateEquipmentCheckout, saveEquipmentCheckin, deleteEquipmentLog,
 } from "./store.js";
 import { applyI18n, getLang, setLang, t } from "./i18n.js";
 import { initTheme, toggleTheme, getTheme, applyTheme } from "./theme.js";
-import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, buildRepairHistoryHTML, slugify } from "./report.js";
+import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, buildRepairHistoryHTML, buildEquipmentCheckoutHTML, buildEquipmentCheckinHTML, slugify } from "./report.js";
+import { EQUIPMENT_CATALOG, EQUIPMENT_CATEGORIES } from "./equipment-catalog.js";
 
 initTheme();
 applyI18n();
+
+// ============================================================
+// DRILL BIT ICON (thay cho emoji ⛏ bị vỡ font trên một số máy)
+// ============================================================
+const DRILL_ICON_PATH = "M1623 5096 l-28 -24 -3 -195 c-3 -207 3 -255 40 -302 38 -49 90 -65 211 -65 l108 0 -3 -92 -3 -93 -68 -5 c-109 -8 -107 -2 -107 -298 l0 -247 191 -287 c207 -310 205 -308 295 -308 l44 0 0 -1555 c0 -1118 3 -1561 11 -1578 12 -26 47 -47 79 -47 30 0 416 293 423 321 4 13 7 662 7 1442 l0 1417 44 0 c90 0 88 -2 295 308 l191 287 0 247 c0 296 2 290 -107 298 l-68 5 -3 93 -3 92 108 0 c121 0 173 16 211 65 37 47 43 95 40 302 l-3 195 -28 24 -28 24 -909 0 -909 0 -28 -24z m1737 -281 l0 -135 -800 0 -800 0 0 135 0 135 800 0 800 0 0 -135z m-352 -397 l-3 -93 -445 0 -445 0 -3 93 -3 92 451 0 451 0 -3 -92z m172 -398 l0 -140 -620 0 -620 0 0 140 0 140 620 0 620 0 0 -140z m-70 -305 c0 -3 -54 -86 -120 -185 l-120 -180 -310 0 -310 0 -120 180 c-66 99 -120 182 -120 185 0 3 248 5 550 5 303 0 550 -2 550 -5z m-460 -605 l0 -69 -77 -59 c-43 -32 -84 -62 -90 -66 -10 -6 -13 23 -13 128 l0 136 90 0 90 0 0 -70z m0 -397 l-1 -118 -81 -60 c-45 -33 -85 -61 -90 -63 -4 -2 -8 48 -8 111 l0 115 88 66 c48 36 88 66 90 66 1 0 2 -53 2 -117z m0 -441 l0 -117 -90 -68 -90 -67 0 118 0 117 88 67 c48 37 88 67 90 67 1 1 2 -52 2 -117z m0 -440 l0 -117 -90 -68 -90 -67 0 118 0 117 88 67 c48 37 88 67 90 67 1 1 2 -52 2 -117z m0 -446 l0 -114 -57 -43 c-32 -23 -73 -54 -90 -67 l-33 -24 0 118 1 119 82 62 c45 34 85 62 90 62 4 1 7 -50 7 -113z m0 -441 l0 -114 -77 -59 c-43 -32 -84 -62 -90 -66 -10 -6 -13 19 -13 108 l0 115 87 66 c47 36 88 65 90 65 1 0 3 -52 3 -115z m0 -442 l-1 -118 -81 -60 c-45 -33 -85 -61 -90 -63 -4 -2 -8 48 -8 111 l0 115 88 66 c48 36 88 66 90 66 1 0 2 -53 2 -117z";
+let drillIconSeq = 0;
+function drillIconSvg() {
+  const gid = `drillIconGrad-${drillIconSeq++}`;
+  return `<svg class="drill-icon" viewBox="0 0 512 512" aria-hidden="true"><defs><linearGradient id="${gid}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:var(--accent-red)" /><stop offset="50%" style="stop-color:var(--accent)" /><stop offset="100%" style="stop-color:var(--accent-2)" /></linearGradient></defs><path fill="url(#${gid})" d="${DRILL_ICON_PATH}" /></svg>`;
+}
 
 const mainView = document.getElementById("mainView");
 let CURRENT_USER = null; // { uid, name, email, role }
@@ -98,6 +110,7 @@ function navigateTo(view, param) {
   else if (view === "project-detail") renderProjectDetail(param);
   else if (view === "report") renderReportView(param);
   else if (view === "drilllog") renderDrillLogView(param);
+  else if (view === "equipment") renderEquipmentView(param);
   else if (view === "activity") renderActivityView();
   else if (view === "settings") renderSettingsView();
 }
@@ -1016,6 +1029,21 @@ function oneOff(watchFn, id) {
 // ============================================================
 // DRILLING MACHINE DAILY LOG
 // ============================================================
+// Danh sách hạng mục sửa máy khoan thường gặp (song ngữ) để chọn nhanh, kèm lựa
+// chọn "Tự nhập" cho trường hợp không có sẵn trong danh sách.
+const REPAIR_ITEM_OPTIONS = [
+  "Hỏng búa SPT / SPT Hammer broken",
+  "Hỏng côn / Clutch broken",
+  "Hỏng bơm / Pump broken",
+  "Hỏng hộp số phụ / Auxiliary gearbox broken",
+  "Hỏng đầu rồng / Main drilling rod broken",
+  "Hỏng bạc đạn / Bearing broken",
+  "Hỏng máy nổ / Diesel machine broken",
+  "Hỏng co nối / Valve broken",
+  "Hỏng tời / Winch broken",
+  "Hỏng ống khoan / Drilling tube broken",
+];
+
 const DRILL_LOG_FIELDS = [
   { key: "operator", label: "operator", type: "text" },
   { key: "engineer", label: "engineerInCharge", type: "text" },
@@ -1025,7 +1053,7 @@ const DRILL_LOG_FIELDS = [
   { key: "endOfDay", label: "endOfDay", type: "time" },
   { key: "breakdownStart", label: "breakdownStart", type: "time" },
   { key: "repairEnd", label: "repairEnd", type: "time" },
-  { key: "repairItem", label: "repairItem", type: "textarea" },
+  { key: "repairItem", label: "repairItem", type: "multiselect" },
   { key: "suspensionTime", label: "suspensionTime", type: "time" },
   { key: "suspensionReason", label: "suspensionReason", type: "text" },
 ];
@@ -1185,11 +1213,90 @@ function renderDrillLogView() {
   }
 }
 
+function repairItemFieldHtml(value) {
+  const val = value || "";
+  const parts = val.split(";").map((s) => s.trim()).filter(Boolean);
+  const selectedSet = new Set(parts.filter((p) => REPAIR_ITEM_OPTIONS.includes(p)));
+  const manualText = parts.filter((p) => !REPAIR_ITEM_OPTIONS.includes(p)).join("; ");
+  const summary = parts.length ? parts.join(", ") : t("repairItemPlaceholder");
+
+  if (!canEdit()) {
+    return `<div class="ms-readonly">${escapeHtml(parts.length ? parts.join(", ") : "—")}</div>`;
+  }
+
+  const optionsHtml = REPAIR_ITEM_OPTIONS.map((opt) => `
+    <label class="ms-option">
+      <input type="checkbox" class="ms-opt-cb" value="${escapeAttr(opt)}" ${selectedSet.has(opt) ? "checked" : ""} />
+      <span>${escapeHtml(opt)}</span>
+    </label>`).join("");
+
+  return `
+  <div class="ms-wrap">
+    <button type="button" class="ms-toggle">
+      <span class="ms-summary">${escapeHtml(summary)}</span>
+      <span class="ms-caret">▾</span>
+    </button>
+    <div class="ms-panel hidden">
+      ${optionsHtml}
+      <label class="ms-option ms-manual-opt">
+        <input type="checkbox" class="ms-manual-cb" ${manualText ? "checked" : ""} />
+        <span data-i18n="manualInput"></span>
+      </label>
+      <textarea class="ms-manual-text ${manualText ? "" : "hidden"}" rows="2" data-i18n-placeholder="manualInputPlaceholder">${escapeHtml(manualText)}</textarea>
+      <button type="button" class="btn btn-primary btn-sm ms-done" data-i18n="done"></button>
+    </div>
+    <input type="hidden" class="dl-field" data-key="repairItem" value="${escapeAttr(val)}" />
+  </div>`;
+}
+
+function bindRepairItemField(wrap) {
+  if (!wrap) return;
+  const toggleBtn = wrap.querySelector(".ms-toggle");
+  const panel = wrap.querySelector(".ms-panel");
+  if (!toggleBtn || !panel) return; // read-only (no picker rendered)
+  const hidden = wrap.querySelector('input.dl-field[data-key="repairItem"]');
+  const summaryEl = wrap.querySelector(".ms-summary");
+  const manualCb = wrap.querySelector(".ms-manual-cb");
+  const manualText = wrap.querySelector(".ms-manual-text");
+
+  function recompute() {
+    const checked = [...wrap.querySelectorAll(".ms-opt-cb:checked")].map((cb) => cb.value);
+    let manual = "";
+    if (manualCb && manualCb.checked) manual = (manualText?.value || "").trim();
+    const all = manual ? [...checked, manual] : checked;
+    const combined = all.join("; ");
+    hidden.value = combined;
+    summaryEl.textContent = all.length ? all.join(", ") : t("repairItemPlaceholder");
+    return combined;
+  }
+  function commit() { hidden.dispatchEvent(new Event("change")); }
+
+  toggleBtn.addEventListener("click", () => panel.classList.toggle("hidden"));
+  wrap.querySelectorAll(".ms-opt-cb").forEach((cb) => {
+    cb.addEventListener("change", () => { recompute(); commit(); });
+  });
+  if (manualCb) {
+    manualCb.addEventListener("change", () => {
+      manualText.classList.toggle("hidden", !manualCb.checked);
+      if (manualCb.checked) manualText.focus();
+      recompute(); commit();
+    });
+  }
+  if (manualText) {
+    manualText.addEventListener("input", recompute);
+    manualText.addEventListener("change", commit);
+  }
+  const doneBtn = wrap.querySelector(".ms-done");
+  if (doneBtn) doneBtn.addEventListener("click", () => panel.classList.add("hidden"));
+}
+
 function drillMachineCardHtml(m, dKey) {
   const { data, carried } = getMachineDayLog(m, dKey);
   const fieldsHtml = DRILL_LOG_FIELDS.map((f) => {
     let control;
-    if (f.type === "textarea") {
+    if (f.type === "multiselect") {
+      control = repairItemFieldHtml(data[f.key]);
+    } else if (f.type === "textarea") {
       control = `<textarea class="dl-field" data-key="${f.key}" rows="2" ${canEdit() ? "" : "disabled"}>${escapeHtml(data[f.key] ?? "")}</textarea>`;
     } else if (f.type === "time") {
       // Nút "✕" riêng để xóa giờ một cách chắc chắn: nút "Đặt lại" của bộ chọn
@@ -1210,7 +1317,7 @@ function drillMachineCardHtml(m, dKey) {
   }).join("");
   return `<div class="card item-block" data-id="${m.id}">
     <div class="item-head">
-      <h4>⛏ ${escapeHtml(m.name || "—")}</h4>
+      <h4>${drillIconSvg()} ${escapeHtml(m.name || "—")}</h4>
       <div class="item-actions">
         ${canEdit() ? `<button class="btn btn-ghost btn-sm edit-dm" data-i18n="edit"></button>` : ""}
         ${canEdit() ? `<button class="btn btn-danger btn-sm del-dm" data-i18n="delete"></button>` : ""}
@@ -1245,6 +1352,7 @@ function bindDrillMachineCard(projectId, m, dKey) {
       input.dispatchEvent(new Event("change"));
     });
   });
+  bindRepairItemField(el.querySelector(".ms-wrap"));
 }
 function openDrillMachineModal(projectId, m) {
   const editing = !!m;
@@ -1273,6 +1381,382 @@ function openDrillMachineModal(projectId, m) {
     showSaveIndicator();
     close();
   });
+}
+
+// ============================================================
+// EQUIPMENT CHECK IN / CHECK OUT VIEW
+// ============================================================
+function equipItemLabel(it) {
+  if (!it) return "";
+  if (it.customName) return it.customName;
+  const cat = EQUIPMENT_CATALOG.find((e) => e.id === it.itemId);
+  const name = cat ? (getLang() === "vi" ? cat.vi : cat.en) : it.itemId;
+  return it.spec ? `${name} — ${it.spec}` : name;
+}
+function equipTimeLabel(ts) {
+  if (!ts) return "—";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleDateString(getLang() === "vi" ? "vi-VN" : "en-US") + " " + d.toLocaleTimeString(getLang() === "vi" ? "vi-VN" : "en-US", { hour: "2-digit", minute: "2-digit" });
+}
+
+function showRepeatProjectModal() {
+  return new Promise((resolve) => {
+    const html = `
+    <div class="modal-backdrop" id="repeatProjModalBackdrop">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 data-i18n="repeatProjectPick"></h3>
+          <button class="icon-btn" id="repeatProjClose">✕</button>
+        </div>
+        <div class="field"><select id="repeatProjSelect">${projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}</select></div>
+        <p class="error-msg" id="repeatProjError"></p>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="repeatProjCancel" data-i18n="cancel"></button>
+          <button class="btn btn-primary" id="repeatProjOk" data-i18n="confirmBtn"></button>
+        </div>
+      </div>
+    </div>`;
+    document.body.insertAdjacentHTML("beforeend", html);
+    const backdrop = document.getElementById("repeatProjModalBackdrop");
+    applyI18n(backdrop);
+    const close = (val) => { backdrop.remove(); resolve(val); };
+    document.getElementById("repeatProjClose").addEventListener("click", () => close(null));
+    document.getElementById("repeatProjCancel").addEventListener("click", () => close(null));
+    document.getElementById("repeatProjOk").addEventListener("click", () => close(document.getElementById("repeatProjSelect").value));
+  });
+}
+
+function renderEquipmentView() {
+  let currentProject = null;
+  let logs = [];
+  let mode = "list"; // list | new | checkin
+  let draftItems = []; // { itemId, spec, customName, qty }
+  let editingLogId = null; // when editing an existing checkout's item list
+  let checkinLog = null; // the log currently being checked in / edited
+
+  function render() {
+    if (mode === "new") renderNewMode();
+    else if (mode === "checkin") renderCheckinMode();
+    else renderListMode();
+  }
+
+  // ---------- LIST MODE ----------
+  function renderListMode() {
+    mainView.innerHTML = topbarHtml("equipmentTitle") + `
+      <div class="report-toolbar">
+        <div class="field"><label data-i18n="selectProject"></label><select id="eq_project"></select></div>
+        ${canEdit() ? `<button class="btn btn-primary" id="eq_new" data-i18n="newCheckout"></button>
+        <button class="btn btn-ghost" id="eq_repeat" data-i18n="repeatPreviousProject"></button>` : ""}
+      </div>
+      <div id="eq_list"></div>
+    `;
+    bindTopbar();
+    const projSelect = document.getElementById("eq_project");
+    projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+    if (currentProject) projSelect.value = currentProject.id;
+
+    async function loadProject(pid) {
+      cleanupProjectWatchers();
+      currentProject = await getProject(pid);
+      const unsub = watchEquipmentLogs(pid, (data) => { logs = data; renderList(); });
+      currentProjectUnsubs.push(unsub);
+    }
+    projSelect.addEventListener("change", () => loadProject(projSelect.value));
+
+    function renderList() {
+      const listEl = document.getElementById("eq_list");
+      if (!listEl) return;
+      if (!logs.length) { listEl.innerHTML = `<div class="empty-state">${t("noEquipmentLogs")}</div>`; return; }
+      listEl.innerHTML = logs.map((log) => {
+        const checkedIn = !!log.checkin;
+        const items = log.items || [];
+        const preview = items.slice(0, 3).map(equipItemLabel).join(", ") + (items.length > 3 ? "…" : "");
+        let summaryHtml = "";
+        if (checkedIn) {
+          const totals = (log.checkin.items || []).reduce((a, it) => {
+            a.issued += Number(it.issuedQty) || 0; a.returned += Number(it.returnedQty) || 0;
+            a.damaged += Number(it.damagedQty) || 0; a.lost += Number(it.lostQty) || 0;
+            return a;
+          }, { issued: 0, returned: 0, damaged: 0, lost: 0 });
+          summaryHtml = `<div class="equip-summary-inline">
+            <span>${t("totalIssued")}: <b>${totals.issued}</b></span>
+            <span>${t("totalReturned")}: <b>${totals.returned}</b></span>
+            <span>${t("totalDamaged")}: <b>${totals.damaged}</b></span>
+            <span>${t("totalLost")}: <b>${totals.lost}</b></span>
+          </div>`;
+        }
+        return `
+        <div class="card equip-card" data-log-id="${log.id}">
+          <div class="item-head">
+            <h4>${equipTimeLabel(log.createdAt)} · ${items.length} ${t("itemsCount")}</h4>
+            <span class="badge ${checkedIn ? "st-done" : "st-progress"}">${checkedIn ? t("checkedIn") : t("notCheckedIn")}</span>
+          </div>
+          <div class="equip-preview">${escapeHtml(preview || "—")}</div>
+          ${summaryHtml}
+          <div class="equip-actions">
+            ${canEdit() && !checkedIn ? `<button class="btn btn-ghost btn-sm eq-edit" data-i18n="editCheckout"></button>` : ""}
+            ${canEdit() ? `<button class="btn btn-primary btn-sm eq-checkin" data-i18n="${checkedIn ? "editCheckin" : "checkinBtn"}"></button>` : ""}
+            <button class="btn btn-ghost btn-sm eq-pdf-out" data-i18n="exportCheckoutPdf"></button>
+            ${checkedIn ? `<button class="btn btn-ghost btn-sm eq-pdf-in" data-i18n="exportCheckinPdf"></button>` : ""}
+            ${isAdmin() ? `<button class="btn btn-danger btn-sm eq-delete" data-i18n="delete"></button>` : ""}
+          </div>
+        </div>`;
+      }).join("");
+      applyI18n(listEl);
+      listEl.querySelectorAll(".equip-card").forEach((card) => {
+        const logId = card.dataset.logId;
+        const log = logs.find((l) => l.id === logId);
+        const editBtn = card.querySelector(".eq-edit");
+        if (editBtn) editBtn.addEventListener("click", () => {
+          editingLogId = logId;
+          draftItems = (log.items || []).map((it) => ({ ...it }));
+          mode = "new"; render();
+        });
+        const checkinBtn = card.querySelector(".eq-checkin");
+        if (checkinBtn) checkinBtn.addEventListener("click", () => { checkinLog = log; mode = "checkin"; render(); });
+        card.querySelector(".eq-pdf-out").addEventListener("click", async (e) => {
+          await exportEquipmentPdf("checkout", log, e.target);
+        });
+        const pdfInBtn = card.querySelector(".eq-pdf-in");
+        if (pdfInBtn) pdfInBtn.addEventListener("click", async (e) => {
+          await exportEquipmentPdf("checkin", log, e.target);
+        });
+        const delBtn = card.querySelector(".eq-delete");
+        if (delBtn) delBtn.addEventListener("click", async () => {
+          if (await showConfirmModal(t("deleteLogConfirm"))) {
+            showSaveIndicator(true);
+            await deleteEquipmentLog(currentProject.id, logId, CURRENT_USER);
+            showSaveIndicator();
+          }
+        });
+      });
+    }
+
+    async function exportEquipmentPdf(kind, log, btnEl) {
+      const btn = btnEl.closest("button");
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = "…";
+      try {
+        const html = kind === "checkout"
+          ? buildEquipmentCheckoutHTML({ project: currentProject, log, currentUser: CURRENT_USER, lang: getLang() })
+          : buildEquipmentCheckinHTML({ project: currentProject, log, currentUser: CURRENT_USER, lang: getLang() });
+        const holder = document.createElement("div");
+        holder.style.position = "fixed"; holder.style.top = "0"; holder.style.left = "-99999px";
+        holder.innerHTML = html;
+        document.body.appendChild(holder);
+        const name = slugify(currentProject?.name);
+        const elId = kind === "checkout" ? "equipCheckoutPrintArea" : "equipCheckinPrintArea";
+        await exportReportToPdf(elId, `${name}_${kind === "checkout" ? "xuatkho" : "nhapkho"}_${dateKey()}.pdf`);
+        document.body.removeChild(holder);
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+
+    const newBtn = document.getElementById("eq_new");
+    if (newBtn) newBtn.addEventListener("click", () => { editingLogId = null; draftItems = []; mode = "new"; render(); });
+    const repeatBtn = document.getElementById("eq_repeat");
+    if (repeatBtn) repeatBtn.addEventListener("click", async () => {
+      const pid = await showRepeatProjectModal();
+      if (!pid) return;
+      showSaveIndicator(true);
+      const prevLog = await getLatestEquipmentLog(pid);
+      showSaveIndicator();
+      if (!prevLog) { alert(t("repeatProjectNone")); return; }
+      editingLogId = null;
+      draftItems = (prevLog.items || []).map((it) => ({ ...it }));
+      mode = "new"; render();
+    });
+
+    if (projectsCache.length) loadProject(projSelect.value);
+  }
+
+  // ---------- NEW / EDIT CHECKOUT MODE ----------
+  function renderNewMode() {
+    const catOptions = `<option value="">${t("allCategories")}</option>` + EQUIPMENT_CATEGORIES.map((c) => `<option value="${c.id}">${escapeHtml(getLang() === "vi" ? c.vi : c.en)}</option>`).join("");
+    mainView.innerHTML = topbarHtml("equipmentTitle") + `
+      <button class="btn btn-ghost btn-sm" id="eq_back" data-i18n="backToList"></button>
+      <div class="card">
+        <h3 data-i18n="newCheckout"></h3>
+        <div class="field-row">
+          <div class="field"><label data-i18n="selectCategory"></label><select id="eq_cat">${catOptions}</select></div>
+          <div class="field"><label data-i18n="searchEquipment"></label><input id="eq_search" data-i18n-placeholder="searchEquipment" /></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label data-i18n="selectEquipment"></label><select id="eq_item"></select></div>
+          <div class="field hidden" id="eq_specWrap"><label data-i18n="selectSpec"></label><select id="eq_spec"></select></div>
+          <div class="field hidden" id="eq_customWrap"><label data-i18n="customEquipmentName"></label><input id="eq_custom" /></div>
+          <div class="field" style="max-width:120px;"><label data-i18n="quantity"></label><input type="number" id="eq_qty" min="1" value="1" /></div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="eq_add" data-i18n="addItem"></button>
+      </div>
+      <div class="card">
+        <h3 data-i18n="draftListTitle"></h3>
+        <div id="eq_draftTable"></div>
+        <button class="btn btn-primary" id="eq_save" data-i18n="saveCheckout"></button>
+      </div>
+    `;
+    bindTopbar();
+    document.getElementById("eq_back").addEventListener("click", () => { mode = "list"; render(); });
+
+    const catSel = document.getElementById("eq_cat");
+    const searchInput = document.getElementById("eq_search");
+    const itemSel = document.getElementById("eq_item");
+    const specWrap = document.getElementById("eq_specWrap");
+    const specSel = document.getElementById("eq_spec");
+    const customWrap = document.getElementById("eq_customWrap");
+    const customInput = document.getElementById("eq_custom");
+    const qtyInput = document.getElementById("eq_qty");
+
+    function fillItemSelect() {
+      const cat = catSel.value;
+      const q = searchInput.value.trim().toLowerCase();
+      const filtered = EQUIPMENT_CATALOG.filter((e) => {
+        if (cat && e.cat !== cat) return false;
+        if (!q) return true;
+        return e.vi.toLowerCase().includes(q) || e.en.toLowerCase().includes(q);
+      });
+      itemSel.innerHTML = filtered.map((e) => `<option value="${e.id}">${escapeHtml(getLang() === "vi" ? e.vi : e.en)}</option>`).join("");
+      updateItemDependentFields();
+    }
+    function updateItemDependentFields() {
+      const it = EQUIPMENT_CATALOG.find((e) => e.id === itemSel.value);
+      if (it && it.specs) {
+        specWrap.classList.remove("hidden");
+        specSel.innerHTML = it.specs.map((s) => `<option value="${escapeAttr(s)}">${escapeHtml(s)}</option>`).join("");
+      } else {
+        specWrap.classList.add("hidden");
+      }
+      customWrap.classList.toggle("hidden", !(it && it.custom));
+    }
+    catSel.addEventListener("change", fillItemSelect);
+    searchInput.addEventListener("input", fillItemSelect);
+    itemSel.addEventListener("change", updateItemDependentFields);
+    fillItemSelect();
+
+    function renderDraftTable() {
+      const el = document.getElementById("eq_draftTable");
+      if (!draftItems.length) { el.innerHTML = `<div class="empty-state">${t("draftListEmpty")}</div>`; return; }
+      el.innerHTML = `<table class="simple-table"><thead><tr>
+        <th data-i18n="equipmentName"></th><th data-i18n="specColumn"></th><th data-i18n="quantity"></th><th></th>
+      </tr></thead><tbody>
+      ${draftItems.map((it, i) => `<tr>
+        <td>${escapeHtml(it.customName || (EQUIPMENT_CATALOG.find((e) => e.id === it.itemId)?.[getLang() === "vi" ? "vi" : "en"] || it.itemId))}</td>
+        <td>${escapeHtml(it.spec || "—")}</td>
+        <td><input type="number" min="0" class="draft-qty" data-idx="${i}" value="${it.qty}" style="width:70px;" /></td>
+        <td><button type="button" class="btn btn-ghost btn-sm draft-remove" data-idx="${i}">✕</button></td>
+      </tr>`).join("")}
+      </tbody></table>`;
+      applyI18n(el);
+      el.querySelectorAll(".draft-qty").forEach((inp) => {
+        inp.addEventListener("change", () => { draftItems[+inp.dataset.idx].qty = Number(inp.value) || 0; });
+      });
+      el.querySelectorAll(".draft-remove").forEach((btn) => {
+        btn.addEventListener("click", () => { draftItems.splice(+btn.dataset.idx, 1); renderDraftTable(); });
+      });
+    }
+    renderDraftTable();
+
+    document.getElementById("eq_add").addEventListener("click", () => {
+      const itemId = itemSel.value;
+      if (!itemId) return;
+      const it = EQUIPMENT_CATALOG.find((e) => e.id === itemId);
+      const spec = it && it.specs ? specSel.value : null;
+      const customName = it && it.custom ? customInput.value.trim() : null;
+      const qty = Number(qtyInput.value) || 0;
+      if (qty <= 0) return;
+      if (it && it.custom && !customName) { alert(t("customEquipmentName")); return; }
+      const existing = draftItems.find((d) => d.itemId === itemId && d.spec === spec && d.customName === customName);
+      if (existing) existing.qty += qty;
+      else draftItems.push({ itemId, spec, customName, qty });
+      qtyInput.value = "1";
+      if (customInput) customInput.value = "";
+      renderDraftTable();
+    });
+
+    document.getElementById("eq_save").addEventListener("click", async () => {
+      const items = draftItems.filter((d) => d.qty > 0);
+      if (!items.length) return;
+      const saveBtn = document.getElementById("eq_save");
+      saveBtn.disabled = true;
+      try {
+        showSaveIndicator(true);
+        if (editingLogId) await updateEquipmentCheckout(currentProject.id, editingLogId, items, CURRENT_USER);
+        else await createEquipmentCheckout(currentProject.id, items, CURRENT_USER);
+        showSaveIndicator();
+        mode = "list"; render();
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+  }
+
+  // ---------- CHECK-IN MODE ----------
+  function renderCheckinMode() {
+    const log = checkinLog;
+    const existingByKey = {};
+    (log.checkin?.items || []).forEach((it) => { existingByKey[`${it.itemId}|${it.spec || ""}|${it.customName || ""}`] = it; });
+
+    mainView.innerHTML = topbarHtml("equipmentTitle") + `
+      <button class="btn btn-ghost btn-sm" id="eq_back2" data-i18n="backToList"></button>
+      <div class="card">
+        <h3 data-i18n="checkinTitle"></h3>
+        <div class="table-scroll"><table class="simple-table">
+          <thead><tr>
+            <th data-i18n="equipmentName"></th><th data-i18n="specColumn"></th>
+            <th data-i18n="issuedQty"></th><th data-i18n="returnedQty"></th>
+            <th data-i18n="damagedQty"></th><th data-i18n="lostQty"></th><th data-i18n="noteCol"></th>
+          </tr></thead>
+          <tbody id="eq_checkinBody">
+          ${(log.items || []).map((it, i) => {
+            const key = `${it.itemId}|${it.spec || ""}|${it.customName || ""}`;
+            const prev = existingByKey[key];
+            const name = it.customName || (EQUIPMENT_CATALOG.find((e) => e.id === it.itemId)?.[getLang() === "vi" ? "vi" : "en"] || it.itemId);
+            return `<tr data-idx="${i}">
+              <td>${escapeHtml(name)}</td>
+              <td>${escapeHtml(it.spec || "—")}</td>
+              <td class="num">${it.qty}</td>
+              <td><input type="number" min="0" class="ci-returned" value="${prev ? prev.returnedQty : it.qty}" style="width:70px;" /></td>
+              <td><input type="number" min="0" class="ci-damaged" value="${prev ? prev.damagedQty : 0}" style="width:70px;" /></td>
+              <td><input type="number" min="0" class="ci-lost" value="${prev ? prev.lostQty : 0}" style="width:70px;" /></td>
+              <td><input type="text" class="ci-note" value="${escapeAttr(prev ? prev.note : "")}" /></td>
+            </tr>`;
+          }).join("")}
+          </tbody>
+        </table></div>
+        <button class="btn btn-primary" id="eq_saveCheckin" data-i18n="saveCheckin"></button>
+      </div>
+    `;
+    bindTopbar();
+    document.getElementById("eq_back2").addEventListener("click", () => { mode = "list"; render(); });
+    document.getElementById("eq_saveCheckin").addEventListener("click", async () => {
+      const rows = [...document.querySelectorAll("#eq_checkinBody tr")];
+      const checkinItems = rows.map((row) => {
+        const idx = +row.dataset.idx;
+        const it = log.items[idx];
+        return {
+          itemId: it.itemId, spec: it.spec || null, customName: it.customName || null,
+          issuedQty: it.qty,
+          returnedQty: Number(row.querySelector(".ci-returned").value) || 0,
+          damagedQty: Number(row.querySelector(".ci-damaged").value) || 0,
+          lostQty: Number(row.querySelector(".ci-lost").value) || 0,
+          note: row.querySelector(".ci-note").value.trim(),
+        };
+      });
+      const btn = document.getElementById("eq_saveCheckin");
+      btn.disabled = true;
+      try {
+        showSaveIndicator(true);
+        await saveEquipmentCheckin(currentProject.id, log.id, checkinItems, CURRENT_USER);
+        showSaveIndicator();
+        mode = "list"; render();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  render();
 }
 
 // ============================================================

@@ -1,5 +1,8 @@
 import { sumDailyLog } from "./store.js";
 import { t } from "./i18n.js";
+import { EQUIPMENT_CATALOG } from "./equipment-catalog.js";
+
+const DRILL_ICON_PATH = "M1623 5096 l-28 -24 -3 -195 c-3 -207 3 -255 40 -302 38 -49 90 -65 211 -65 l108 0 -3 -92 -3 -93 -68 -5 c-109 -8 -107 -2 -107 -298 l0 -247 191 -287 c207 -310 205 -308 295 -308 l44 0 0 -1555 c0 -1118 3 -1561 11 -1578 12 -26 47 -47 79 -47 30 0 416 293 423 321 4 13 7 662 7 1442 l0 1417 44 0 c90 0 88 -2 295 308 l191 287 0 247 c0 296 2 290 -107 298 l-68 5 -3 93 -3 92 108 0 c121 0 173 16 211 65 37 47 43 95 40 302 l-3 195 -28 24 -28 24 -909 0 -909 0 -28 -24z m1737 -281 l0 -135 -800 0 -800 0 0 135 0 135 800 0 800 0 0 -135z m-352 -397 l-3 -93 -445 0 -445 0 -3 93 -3 92 451 0 451 0 -3 -92z m172 -398 l0 -140 -620 0 -620 0 0 140 0 140 620 0 620 0 0 -140z m-70 -305 c0 -3 -54 -86 -120 -185 l-120 -180 -310 0 -310 0 -120 180 c-66 99 -120 182 -120 185 0 3 248 5 550 5 303 0 550 -2 550 -5z m-460 -605 l0 -69 -77 -59 c-43 -32 -84 -62 -90 -66 -10 -6 -13 23 -13 128 l0 136 90 0 90 0 0 -70z m0 -397 l-1 -118 -81 -60 c-45 -33 -85 -61 -90 -63 -4 -2 -8 48 -8 111 l0 115 88 66 c48 36 88 66 90 66 1 0 2 -53 2 -117z m0 -441 l0 -117 -90 -68 -90 -67 0 118 0 117 88 67 c48 37 88 67 90 67 1 1 2 -52 2 -117z m0 -440 l0 -117 -90 -68 -90 -67 0 118 0 117 88 67 c48 37 88 67 90 67 1 1 2 -52 2 -117z m0 -446 l0 -114 -57 -43 c-32 -23 -73 -54 -90 -67 l-33 -24 0 118 1 119 82 62 c45 34 85 62 90 62 4 1 7 -50 7 -113z m0 -441 l0 -114 -77 -59 c-43 -32 -84 -62 -90 -66 -10 -6 -13 19 -13 108 l0 115 87 66 c47 36 88 65 90 65 1 0 3 -52 3 -115z m0 -442 l-1 -118 -81 -60 c-45 -33 -85 -61 -90 -63 -4 -2 -8 48 -8 111 l0 115 88 66 c48 36 88 66 90 66 1 0 2 -53 2 -117z";
 
 // Rounding a small-but-nonzero progress (e.g. 0.8%) to a whole number shows a
 // misleading "0%". Fall back to one decimal place only in that edge case.
@@ -234,7 +237,7 @@ export function buildDrillLogHTML({ project, machines, dKey, currentUser, lang }
     const data = getMachineDayLogRaw(m, dKey);
     const rows = DRILL_LOG_FIELDS_REPORT.map((f) => `<tr><td>${t(f.label)}</td><td>${escapeHtml(data[f.key] || "—")}</td></tr>`).join("");
     return `<div class="report-section">
-      <div class="section-title">⛏ ${escapeHtml(m.name || "—")}</div>
+      <div class="section-title"><svg viewBox="0 0 512 512" width="13" height="13" style="vertical-align:-1px;margin-right:4px;" aria-hidden="true"><path fill="currentColor" d="${DRILL_ICON_PATH}" /></svg>${escapeHtml(m.name || "—")}</div>
       <table class="report-info-table report-table-closed">${rows}</table>
     </div>`;
   }).join("");
@@ -610,6 +613,120 @@ export function slugify(str) {
     .replace(/[^a-zA-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 60) || "report";
+}
+
+// ============================================================
+// EQUIPMENT CHECK IN / CHECK OUT REPORTS
+// ============================================================
+function equipItemName(it, lang) {
+  if (it.customName) return it.customName;
+  const cat = EQUIPMENT_CATALOG.find((e) => e.id === it.itemId);
+  return cat ? (lang === "vi" ? cat.vi : cat.en) : it.itemId;
+}
+function reportHead(lang, exportedAt) {
+  return `<div class="report-head">
+      <div class="brand">
+        <div class="mark">DR</div>
+        <div>
+          <div class="name">Daily Report</div>
+          <div class="tag">${lang === "vi" ? "Hệ thống quản lý quy trình khảo sát" : "Field survey workflow management system"}</div>
+        </div>
+      </div>
+      <div class="meta"><div><b>${t("exportedAt")}:</b> ${exportedAt}</div></div>
+    </div>`;
+}
+function reportSignRow(currentUser) {
+  return `<div class="sign-row">
+      <div><div class="role">${t("preparedBy")}</div><div class="name">${escapeHtml(currentUser?.name || currentUser?.email || "")}</div></div>
+      <div><div class="role">${t("checkedBy")}</div><div class="name">&nbsp;</div></div>
+      <div><div class="role">${t("headOfDept")}</div><div class="name">&nbsp;</div></div>
+    </div>`;
+}
+
+export function buildEquipmentCheckoutHTML({ project, log, currentUser, lang }) {
+  const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
+  const items = log?.items || [];
+  const rows = items.map((it, i) => `<tr>
+      <td class="num">${i + 1}</td>
+      <td>${escapeHtml(equipItemName(it, lang))}</td>
+      <td>${escapeHtml(it.spec || "—")}</td>
+      <td class="num">${it.qty}</td>
+      <td></td>
+    </tr>`).join("");
+
+  return `
+  <div class="report-page" id="equipCheckoutPrintArea">
+    ${reportHead(lang, exportedAt)}
+    <div class="report-title">${t("equipmentCheckoutTitle")}</div>
+    <div class="report-section">
+      <table class="report-info-table report-table-closed">
+        <tr><td>${t("project")}</td><td>${escapeHtml(project?.name || "—")}</td></tr>
+        <tr><td>${t("projectLocation")}</td><td>${escapeHtml(project?.location || "—")}</td></tr>
+        <tr><td>${t("fieldEngineer")}</td><td>${escapeHtml(project?.siteEngineer || "—")}</td></tr>
+        <tr><td>${t("manager")}</td><td>${escapeHtml(project?.manager || "—")}</td></tr>
+      </table>
+    </div>
+    <div class="report-section">
+      <table class="report-table-closed">
+        <thead><tr>
+          <th>No.</th><th>${t("equipmentName")}</th><th>${t("specColumn")}</th><th>${t("quantity")}</th><th>${t("noteCol")}</th>
+        </tr></thead>
+        <tbody>${rows || `<tr><td colspan="5" style="text-align:center;color:#888;">${t("noItems")}</td></tr>`}</tbody>
+      </table>
+    </div>
+    ${reportSignRow(currentUser)}
+  </div>`;
+}
+
+export function buildEquipmentCheckinHTML({ project, log, currentUser, lang }) {
+  const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
+  const items = log?.checkin?.items || [];
+  const totals = items.reduce((a, it) => {
+    a.issued += Number(it.issuedQty) || 0; a.returned += Number(it.returnedQty) || 0;
+    a.damaged += Number(it.damagedQty) || 0; a.lost += Number(it.lostQty) || 0;
+    return a;
+  }, { issued: 0, returned: 0, damaged: 0, lost: 0 });
+
+  const rows = items.map((it, i) => `<tr>
+      <td class="num">${i + 1}</td>
+      <td>${escapeHtml(equipItemName(it, lang))}</td>
+      <td>${escapeHtml(it.spec || "—")}</td>
+      <td class="num">${it.issuedQty}</td>
+      <td class="num">${it.returnedQty}</td>
+      <td class="num">${it.damagedQty}</td>
+      <td class="num">${it.lostQty}</td>
+      <td>${escapeHtml(it.note || "")}</td>
+    </tr>`).join("");
+
+  return `
+  <div class="report-page" id="equipCheckinPrintArea">
+    ${reportHead(lang, exportedAt)}
+    <div class="report-title">${t("equipmentCheckinTitle")}</div>
+    <div class="report-section">
+      <table class="report-info-table report-table-closed">
+        <tr><td>${t("project")}</td><td>${escapeHtml(project?.name || "—")}</td></tr>
+        <tr><td>${t("projectLocation")}</td><td>${escapeHtml(project?.location || "—")}</td></tr>
+        <tr><td>${t("fieldEngineer")}</td><td>${escapeHtml(project?.siteEngineer || "—")}</td></tr>
+        <tr><td>${t("manager")}</td><td>${escapeHtml(project?.manager || "—")}</td></tr>
+      </table>
+    </div>
+    <div class="report-section">
+      <table class="report-table-closed">
+        <thead><tr>
+          <th>No.</th><th>${t("equipmentName")}</th><th>${t("specColumn")}</th>
+          <th>${t("issuedQty")}</th><th>${t("returnedQty")}</th><th>${t("damagedQty")}</th><th>${t("lostQty")}</th><th>${t("noteCol")}</th>
+        </tr></thead>
+        <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:#888;">${t("noItems")}</td></tr>`}</tbody>
+      </table>
+    </div>
+    <div class="report-section">
+      <table class="report-info-table report-table-closed">
+        <tr><td>${t("totalIssued")}</td><td>${totals.issued}</td><td>${t("totalReturned")}</td><td>${totals.returned}</td></tr>
+        <tr><td>${t("totalDamaged")}</td><td>${totals.damaged}</td><td>${t("totalLost")}</td><td>${totals.lost}</td></tr>
+      </table>
+    </div>
+    ${reportSignRow(currentUser)}
+  </div>`;
 }
 
 function escapeHtml(str) {

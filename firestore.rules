@@ -33,6 +33,10 @@ service cloud.firestore {
         allow read: if isSignedIn();
         allow write: if canEdit();
       }
+      match /equipmentLogs/{id} {
+        allow read: if isSignedIn();
+        allow write: if canEdit();
+      }
       match /activity/{id} {
         allow read: if isSignedIn();
         allow create: if isSignedIn();

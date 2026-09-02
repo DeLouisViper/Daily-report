@@ -231,6 +231,55 @@ export async function updateDrillingMachineField(projectId, id, dKey, field, val
   await logActivity(projectId, user, "updated", `${label} (${dKey})`);
 }
 
+// ---------- Equipment Check In / Check Out ----------
+// Mỗi lượt "xuất kho" cho 1 dự án là 1 document trong projects/{id}/equipmentLogs.
+// Khi thu hồi (check-in), ta cập nhật field "checkin" ngay trên document đó,
+// không tạo doc mới, để lịch sử luôn gắn liền 1 cặp xuất-nhập.
+export function watchEquipmentLogs(projectId, cb) {
+  const q = query(collection(db, "projects", projectId, "equipmentLogs"), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+}
+export async function getEquipmentLog(projectId, logId) {
+  const snap = await getDoc(doc(db, "projects", projectId, "equipmentLogs", logId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+// Lấy lượt xuất kho gần nhất của MỘT dự án bất kỳ (kể cả dự án khác) để "Lặp lại dự án trước".
+export async function getLatestEquipmentLog(projectId) {
+  const q = query(collection(db, "projects", projectId, "equipmentLogs"), orderBy("createdAt", "desc"));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+export async function createEquipmentCheckout(projectId, items, user) {
+  const ref = await addDoc(collection(db, "projects", projectId, "equipmentLogs"), {
+    items,
+    createdAt: serverTimestamp(),
+    createdBy: user?.name || user?.email || "—",
+    checkin: null,
+  });
+  await logActivity(projectId, user, "created", `Xuất kho thiết bị (${items.length} mục)`);
+  return ref.id;
+}
+export async function updateEquipmentCheckout(projectId, logId, items, user) {
+  await updateDoc(doc(db, "projects", projectId, "equipmentLogs", logId), { items });
+  await logActivity(projectId, user, "updated", `Xuất kho thiết bị (${items.length} mục)`);
+}
+export async function saveEquipmentCheckin(projectId, logId, checkinItems, user) {
+  await updateDoc(doc(db, "projects", projectId, "equipmentLogs", logId), {
+    checkin: {
+      items: checkinItems,
+      checkedInAt: serverTimestamp(),
+      checkedInBy: user?.name || user?.email || "—",
+    },
+  });
+  await logActivity(projectId, user, "updated", `Nhập kho thiết bị (${checkinItems.length} mục)`);
+}
+export async function deleteEquipmentLog(projectId, logId, user) {
+  await deleteDoc(doc(db, "projects", projectId, "equipmentLogs", logId));
+  await logActivity(projectId, user, "deleted", "Phiếu xuất/nhập thiết bị");
+}
+
 // ---------- Helpers ----------
 export function dateKey(d = new Date()) {
   const y = d.getFullYear();

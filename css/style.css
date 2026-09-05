@@ -155,6 +155,23 @@ label { font-size: 12.5px; color: var(--text-dim); display: block; margin-bottom
 
 /* ---------- Equipment Check In / Check Out ---------- */
 .equip-card { margin-bottom: 14px; }
+
+/* ---------- Materials Price List (Bảng giá vật tư) ---------- */
+.materials-search-wrap { display: flex; justify-content: center; margin: 4px 0 18px; }
+.materials-search {
+  width: 100%; max-width: 640px; padding: 16px 22px; font-size: 16px; font-weight: 600;
+  text-align: center; border-radius: 16px;
+}
+.materials-toolbar { justify-content: center; flex-wrap: wrap; }
+.material-card { margin-bottom: 14px; }
+.material-price {
+  font-size: 21px; font-weight: 800; margin-bottom: 8px;
+  background: var(--accent-gradient); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.material-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 8px; }
+.material-location { font-size: 13px; color: var(--text-dim); }
+.material-location a { color: var(--accent-2); }
+.material-updated { font-size: 11.5px; color: var(--text-dim); }
 .equip-card .item-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .equip-card .item-head h4 { font-size: 14px; margin: 0; }
 .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 800; white-space: nowrap; }

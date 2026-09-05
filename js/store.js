@@ -280,6 +280,35 @@ export async function deleteEquipmentLog(projectId, logId, user) {
   await logActivity(projectId, user, "deleted", "Phiếu xuất/nhập thiết bị");
 }
 
+// ---------- Materials Price List (Bảng giá vật tư) ----------
+// Danh sách giá vật tư/thiết bị dùng CHUNG cho toàn hệ thống (không theo từng
+// dự án, vì giá vật tư thường không đổi theo dự án). Mỗi lần sửa giá sẽ cập
+// nhật "updatedAt" để biết giá được xác nhận gần nhất vào lúc nào.
+export function watchMaterials(cb) {
+  const q = query(collection(db, "materials"), orderBy("name"));
+  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+}
+export async function addMaterial(data, user) {
+  const ref = await addDoc(collection(db, "materials"), {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    createdBy: user?.name || user?.email || "—",
+    updatedBy: user?.name || user?.email || "—",
+  });
+  return ref.id;
+}
+export async function updateMaterial(id, data, user) {
+  await updateDoc(doc(db, "materials", id), {
+    ...data,
+    updatedAt: serverTimestamp(),
+    updatedBy: user?.name || user?.email || "—",
+  });
+}
+export async function deleteMaterial(id) {
+  await deleteDoc(doc(db, "materials", id));
+}
+
 // ---------- Helpers ----------
 export function dateKey(d = new Date()) {
   const y = d.getFullYear();

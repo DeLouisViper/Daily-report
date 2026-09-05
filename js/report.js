@@ -739,6 +739,49 @@ export function buildEquipmentCheckinHTML({ project, log, currentUser, lang }) {
   </div>`;
 }
 
+// ============================================================
+// MATERIALS PRICE LIST REPORT
+// ============================================================
+function isUrlLikeReport(str) { return /^https?:\/\//i.test(String(str || "").trim()); }
+function formatMaterialPriceReport(m) {
+  const val = Number(m.price) || 0;
+  if (m.currency === "USD") return "$" + val.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return val.toLocaleString("vi-VN") + " ₫";
+}
+function formatMaterialTimeReport(ts, lang) {
+  if (!ts) return "—";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const locale = lang === "vi" ? "vi-VN" : "en-US";
+  return d.toLocaleDateString(locale) + " " + d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+}
+
+export function buildMaterialsPdfHTML({ materials, currentUser, lang }) {
+  const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
+  const rows = (materials || []).map((m, i) => `<tr>
+      <td class="num">${i + 1}</td>
+      <td>${escapeHtml(m.name || "—")}</td>
+      <td class="num">${escapeHtml(formatMaterialPriceReport(m))}</td>
+      <td>${m.buyLocation ? (isUrlLikeReport(m.buyLocation) ? `<a href="${escapeHtml(m.buyLocation)}">${escapeHtml(t("buyLocation"))}</a>` : escapeHtml(m.buyLocation)) : "—"}</td>
+      <td>${m.imageUrl ? `<a href="${escapeHtml(m.imageUrl)}">${escapeHtml(t("viewImage"))}</a>` : "—"}</td>
+      <td>${escapeHtml(formatMaterialTimeReport(m.updatedAt, lang))}</td>
+    </tr>`).join("");
+
+  return `
+  <div class="report-page" id="materialsPrintArea">
+    ${reportHead(lang, exportedAt)}
+    <div class="report-title">${t("materialsReportTitle")}</div>
+    <div class="report-section">
+      <table class="report-table-closed">
+        <thead><tr>
+          <th>${t("no")}</th><th>${t("materialName")}</th><th>${t("price")}</th><th>${t("buyLocation")}</th><th>${t("viewImage")}</th><th>${t("lastUpdated")}</th>
+        </tr></thead>
+        <tbody>${rows || `<tr><td colspan="6" style="text-align:center;color:#888;">${t("noMaterials")}</td></tr>`}</tbody>
+      </table>
+    </div>
+    ${reportSignRow(currentUser)}
+  </div>`;
+}
+
 function escapeHtml(str) {
   return String(str ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

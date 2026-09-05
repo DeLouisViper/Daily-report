@@ -1840,6 +1840,25 @@ function renderEquipmentView() {
 // MATERIALS PRICE LIST VIEW (Bảng giá vật tư)
 // ============================================================
 function isUrlLike(str) { return /^https?:\/\//i.test(String(str || "").trim()); }
+// Dữ liệu cũ lưu chung "Tên - link" trong 1 ô "Nơi mua"; tách ra để điền sẵn khi
+// sửa 1 vật tư cũ, và để hiển thị đẹp (tên là chữ bấm được, dẫn tới link).
+function splitLegacyBuyLocation(str) {
+  const s = String(str || "").trim();
+  if (!s) return { name: "", url: "" };
+  const m = s.match(/(https?:\/\/\S+)/i);
+  if (!m) return { name: s, url: "" };
+  const url = m[1];
+  const name = s.replace(url, "").replace(/[-–—:|]+$/, "").replace(/^[-–—:|]+/, "").trim();
+  return { name, url };
+}
+function buyLocationDisplay(m) {
+  const name = (m.buyLocationName || "").trim();
+  const url = (m.buyLocationUrl || "").trim();
+  if (name || url) return { text: name || url, url: url || null };
+  const legacy = splitLegacyBuyLocation(m.buyLocation);
+  if (!legacy.name && !legacy.url) return null;
+  return { text: legacy.name || legacy.url, url: legacy.url || null };
+}
 function formatMaterialPrice(m) {
   const val = Number(m.price) || 0;
   if (m.currency === "USD") return "$" + val.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -1854,6 +1873,9 @@ function formatMaterialTime(ts) {
 
 function openMaterialModal(material) {
   const editing = !!material;
+  const prefill = (material && !material.buyLocationName && !material.buyLocationUrl && material.buyLocation)
+    ? splitLegacyBuyLocation(material.buyLocation)
+    : { name: material?.buyLocationName || "", url: material?.buyLocationUrl || "" };
   const html = `
   <div class="modal-backdrop" id="mtModalBackdrop">
     <div class="modal">
@@ -1871,7 +1893,8 @@ function openMaterialModal(material) {
           </select>
         </div>
       </div>
-      <div class="field"><label data-i18n="buyLocation"></label><input id="mt_location" data-i18n-placeholder="buyLocationPlaceholder" value="${escapeAttr(material?.buyLocation)}" /></div>
+      <div class="field"><label data-i18n="buyLocationName"></label><input id="mt_locationName" data-i18n-placeholder="buyLocationNamePlaceholder" value="${escapeAttr(prefill.name)}" /></div>
+      <div class="field"><label data-i18n="buyLocationUrl"></label><input id="mt_locationUrl" placeholder="https://maps.app.goo.gl/..." value="${escapeAttr(prefill.url)}" /></div>
       <div class="field"><label data-i18n="imageUrl"></label><input id="mt_image" value="${escapeAttr(material?.imageUrl)}" placeholder="https://drive.google.com/..." /></div>
       <p class="error-msg" id="mtModalError"></p>
       <div class="modal-actions">
@@ -1890,12 +1913,13 @@ function openMaterialModal(material) {
     const name = document.getElementById("mt_name").value.trim();
     const price = Number(document.getElementById("mt_price").value);
     const currency = document.getElementById("mt_currency").value;
-    const buyLocation = document.getElementById("mt_location").value.trim();
+    const buyLocationName = document.getElementById("mt_locationName").value.trim();
+    const buyLocationUrl = document.getElementById("mt_locationUrl").value.trim();
     const imageUrl = document.getElementById("mt_image").value.trim();
     const errEl = document.getElementById("mtModalError");
     if (!name) { errEl.textContent = t("materialNameRequired"); return; }
     if (!(price >= 0)) { errEl.textContent = t("priceRequired"); return; }
-    const data = { name, price, currency, buyLocation, imageUrl };
+    const data = { name, price, currency, buyLocationName, buyLocationUrl, imageUrl };
     const saveBtn = document.getElementById("mtModalSave");
     saveBtn.disabled = true;
     try {
@@ -1962,15 +1986,19 @@ function renderMaterialsView() {
 
     document.getElementById("mt_exportExcel").addEventListener("click", () => {
       const filtered = materials.filter(matchesSearch);
-      const rows = filtered.map((m, i) => ({
-        [t("no")]: i + 1,
-        [t("materialName")]: m.name || "",
-        [t("price")]: m.price ?? "",
-        [t("currency")]: m.currency || "",
-        [t("buyLocation")]: m.buyLocation || "",
-        [t("imageUrl")]: m.imageUrl || "",
-        [t("lastUpdated")]: formatMaterialTime(m.updatedAt),
-      }));
+      const rows = filtered.map((m, i) => {
+        const loc = buyLocationDisplay(m);
+        return {
+          [t("no")]: i + 1,
+          [t("materialName")]: m.name || "",
+          [t("price")]: m.price ?? "",
+          [t("currency")]: m.currency || "",
+          [t("buyLocationName")]: loc?.text || "",
+          [t("buyLocationUrl")]: loc?.url || "",
+          [t("imageUrl")]: m.imageUrl || "",
+          [t("lastUpdated")]: formatMaterialTime(m.updatedAt),
+        };
+      });
       const ws = window.XLSX.utils.json_to_sheet(rows);
       const wb = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(wb, ws, "Materials");
@@ -1993,7 +2021,7 @@ function renderMaterialsView() {
           </div>
           <div class="material-price">${escapeHtml(formatMaterialPrice(m))}</div>
           <div class="material-meta">
-            ${m.buyLocation ? `<div class="material-location">📍 ${isUrlLike(m.buyLocation) ? `<a href="${escapeAttr(m.buyLocation)}" target="_blank" rel="noopener">${t("buyLocation")}</a>` : escapeHtml(m.buyLocation)}</div>` : ""}
+            ${(() => { const loc = buyLocationDisplay(m); return loc ? `<div class="material-location">📍 ${loc.url ? `<a href="${escapeAttr(loc.url)}" target="_blank" rel="noopener">${escapeHtml(loc.text)}</a>` : escapeHtml(loc.text)}</div>` : ""; })()}
             ${m.imageUrl ? `<a class="btn btn-ghost btn-sm" href="${escapeAttr(m.imageUrl)}" target="_blank" rel="noopener" data-i18n="viewImage"></a>` : ""}
           </div>
           <div class="material-updated">${t("lastUpdated")}: ${formatMaterialTime(m.updatedAt)}</div>

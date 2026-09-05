@@ -23,11 +23,11 @@ applyI18n();
 // ============================================================
 // DRILL BIT ICON (thay cho emoji ⛏ bị vỡ font trên một số máy)
 // ============================================================
-const DRILL_ICON_PATH = "M1623 5096 l-28 -24 -3 -195 c-3 -207 3 -255 40 -302 38 -49 90 -65 211 -65 l108 0 -3 -92 -3 -93 -68 -5 c-109 -8 -107 -2 -107 -298 l0 -247 191 -287 c207 -310 205 -308 295 -308 l44 0 0 -1555 c0 -1118 3 -1561 11 -1578 12 -26 47 -47 79 -47 30 0 416 293 423 321 4 13 7 662 7 1442 l0 1417 44 0 c90 0 88 -2 295 308 l191 287 0 247 c0 296 2 290 -107 298 l-68 5 -3 93 -3 92 108 0 c121 0 173 16 211 65 37 47 43 95 40 302 l-3 195 -28 24 -28 24 -909 0 -909 0 -28 -24z m1737 -281 l0 -135 -800 0 -800 0 0 135 0 135 800 0 800 0 0 -135z m-352 -397 l-3 -93 -445 0 -445 0 -3 93 -3 92 451 0 451 0 -3 -92z m172 -398 l0 -140 -620 0 -620 0 0 140 0 140 620 0 620 0 0 -140z m-70 -305 c0 -3 -54 -86 -120 -185 l-120 -180 -310 0 -310 0 -120 180 c-66 99 -120 182 -120 185 0 3 248 5 550 5 303 0 550 -2 550 -5z m-460 -605 l0 -69 -77 -59 c-43 -32 -84 -62 -90 -66 -10 -6 -13 23 -13 128 l0 136 90 0 90 0 0 -70z m0 -397 l-1 -118 -81 -60 c-45 -33 -85 -61 -90 -63 -4 -2 -8 48 -8 111 l0 115 88 66 c48 36 88 66 90 66 1 0 2 -53 2 -117z m0 -441 l0 -117 -90 -68 -90 -67 0 118 0 117 88 67 c48 37 88 67 90 67 1 1 2 -52 2 -117z m0 -440 l0 -117 -90 -68 -90 -67 0 118 0 117 88 67 c48 37 88 67 90 67 1 1 2 -52 2 -117z m0 -446 l0 -114 -57 -43 c-32 -23 -73 -54 -90 -67 l-33 -24 0 118 1 119 82 62 c45 34 85 62 90 62 4 1 7 -50 7 -113z m0 -441 l0 -114 -77 -59 c-43 -32 -84 -62 -90 -66 -10 -6 -13 19 -13 108 l0 115 87 66 c47 36 88 65 90 65 1 0 3 -52 3 -115z m0 -442 l-1 -118 -81 -60 c-45 -33 -85 -61 -90 -63 -4 -2 -8 48 -8 111 l0 115 88 66 c48 36 88 66 90 66 1 0 2 -53 2 -117z";
+const DRILL_ICON_INNER = `<rect x="10" y="2" width="4" height="2.6" rx="0.5"/><path d="M10.2 4.6 L9.4 14.5"/><path d="M13.8 4.6 L14.6 14.5"/><path d="M9.4 14.5 L12 21 L14.6 14.5"/><path d="M9.9 8 L14.1 8"/><path d="M9.65 11.2 L14.35 11.2"/>`;
 let drillIconSeq = 0;
 function drillIconSvg() {
   const gid = `drillIconGrad-${drillIconSeq++}`;
-  return `<svg class="drill-icon" viewBox="0 0 512 512" aria-hidden="true"><defs><linearGradient id="${gid}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:var(--accent-red)" /><stop offset="50%" style="stop-color:var(--accent)" /><stop offset="100%" style="stop-color:var(--accent-2)" /></linearGradient></defs><path fill="url(#${gid})" d="${DRILL_ICON_PATH}" /></svg>`;
+  return `<svg class="drill-icon" viewBox="0 0 24 24" fill="none" stroke="url(#${gid})" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="${gid}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:var(--accent-red)" /><stop offset="50%" style="stop-color:var(--accent)" /><stop offset="100%" style="stop-color:var(--accent-2)" /></linearGradient></defs>${DRILL_ICON_INNER}</svg>`;
 }
 
 const mainView = document.getElementById("mainView");
@@ -1051,8 +1051,7 @@ const DRILL_LOG_FIELDS = [
   { key: "lunchBreak", label: "lunchBreak", type: "time" },
   { key: "afternoonStart", label: "afternoonStart", type: "time" },
   { key: "endOfDay", label: "endOfDay", type: "time" },
-  { key: "breakdownStart", label: "breakdownStart", type: "time" },
-  { key: "repairEnd", label: "repairEnd", type: "time" },
+  { key: "breakdownPeriods", label: "breakdownPeriods", type: "periods" },
   { key: "repairItem", label: "repairItem", type: "multiselect" },
   { key: "suspensionTime", label: "suspensionTime", type: "time" },
   { key: "suspensionReason", label: "suspensionReason", type: "text" },
@@ -1116,15 +1115,15 @@ function renderDrillLogView() {
   // Trên điện thoại, bộ chọn giờ gốc (native <input type="time">) sẽ tự động
   // đóng lại nếu phần tử input bị hủy/tạo lại giữa lúc đang chọn (ví dụ vừa
   // chỉnh xong giờ thì component bị vẽ lại do Firestore báo có thay đổi —
-  // chính là giá trị vừa lưu). Vì vậy khi đang có 1 ô .dl-field được focus,
-  // ta hoãn việc vẽ lại danh sách cho đến khi người dùng rời khỏi ô đó.
+  // chính là giá trị vừa lưu). Vì vậy khi đang có 1 ô giờ (input type="time")
+  // bất kỳ được focus, ta hoãn việc vẽ lại danh sách cho đến khi rời khỏi ô đó.
   let pendingRerender = false;
+  function isTimeInput(el) { return !!el && el.tagName === "INPUT" && el.type === "time"; }
   function loadMachines(pid) {
     const unsub = watchDrillingMachines(pid, (machines) => {
       currentMachines = machines;
       fillMachineFilter();
-      const active = document.activeElement;
-      if (active && active.classList && active.classList.contains("dl-field")) {
+      if (isTimeInput(document.activeElement)) {
         pendingRerender = true;
         return;
       }
@@ -1133,7 +1132,7 @@ function renderDrillLogView() {
     currentProjectUnsubs.push(unsub);
   }
   document.getElementById("dl_container").addEventListener("focusout", (e) => {
-    if (e.target?.classList?.contains("dl-field") && pendingRerender) {
+    if (isTimeInput(e.target) && pendingRerender) {
       pendingRerender = false;
       renderCards();
     }
@@ -1211,6 +1210,61 @@ function renderDrillLogView() {
     });
     currentProjectUnsubs.push(unsub);
   }
+}
+
+// Cho phép ghi nhận NHIỀU khoảng thời gian hỏng máy/sửa xong trong cùng 1 ngày
+// (VD: hỏng lúc 8h sửa xong 11h, rồi lại hỏng lúc 13h sửa xong 15h), thay vì chỉ
+// 1 cặp giờ duy nhất như trước — giúp người kiểm tra dễ theo dõi hơn.
+function breakdownPeriodsFieldHtml(value) {
+  const periods = Array.isArray(value) ? value : [];
+  if (!canEdit()) {
+    if (!periods.length) return `<div class="ms-readonly">—</div>`;
+    return `<div class="ms-readonly">${periods.map((p) => `${escapeHtml(p.start || "?")} → ${escapeHtml(p.end || "?")}`).join("; ")}</div>`;
+  }
+  const rowsHtml = periods.map((p) => `
+    <div class="bp-row">
+      <input type="time" class="bp-start" value="${escapeAttr(p.start)}" />
+      <span class="bp-arrow">→</span>
+      <input type="time" class="bp-end" value="${escapeAttr(p.end)}" />
+      <button type="button" class="bp-remove" title="${t("remove")}">✕</button>
+    </div>`).join("");
+  return `<div class="bp-wrap">
+    <div class="bp-rows">${rowsHtml}</div>
+    ${!periods.length ? `<div class="bp-empty">${t("noBreakdownPeriods")}</div>` : ""}
+    <button type="button" class="btn btn-ghost btn-sm bp-add">${t("addBreakdownPeriod")}</button>
+  </div>`;
+}
+
+function bindBreakdownPeriodsField(wrap, projectId, machineId, dKey, machineName) {
+  if (!wrap) return; // read-only (no editor rendered)
+  const rowsContainer = wrap.querySelector(".bp-rows");
+  const addBtn = wrap.querySelector(".bp-add");
+
+  function bindRow(row) {
+    row.querySelectorAll(".bp-start, .bp-end").forEach((inp) => inp.addEventListener("change", save));
+    row.querySelector(".bp-remove").addEventListener("click", () => { row.remove(); save(); });
+  }
+  rowsContainer.querySelectorAll(".bp-row").forEach(bindRow);
+
+  async function save() {
+    const periods = [...rowsContainer.querySelectorAll(".bp-row")].map((row) => ({
+      start: row.querySelector(".bp-start").value || "",
+      end: row.querySelector(".bp-end").value || "",
+    }));
+    showSaveIndicator(true);
+    await updateDrillingMachineField(projectId, machineId, dKey, "breakdownPeriods", periods, CURRENT_USER, machineName);
+    showSaveIndicator();
+  }
+
+  addBtn.addEventListener("click", () => {
+    const empty = wrap.querySelector(".bp-empty");
+    if (empty) empty.remove();
+    const row = document.createElement("div");
+    row.className = "bp-row";
+    row.innerHTML = `<input type="time" class="bp-start" /><span class="bp-arrow">→</span><input type="time" class="bp-end" /><button type="button" class="bp-remove" title="${t("remove")}">✕</button>`;
+    rowsContainer.appendChild(row);
+    bindRow(row);
+  });
 }
 
 function repairItemFieldHtml(value) {
@@ -1294,7 +1348,9 @@ function drillMachineCardHtml(m, dKey) {
   const { data, carried } = getMachineDayLog(m, dKey);
   const fieldsHtml = DRILL_LOG_FIELDS.map((f) => {
     let control;
-    if (f.type === "multiselect") {
+    if (f.type === "periods") {
+      control = breakdownPeriodsFieldHtml(data[f.key]);
+    } else if (f.type === "multiselect") {
       control = repairItemFieldHtml(data[f.key]);
     } else if (f.type === "textarea") {
       control = `<textarea class="dl-field" data-key="${f.key}" rows="2" ${canEdit() ? "" : "disabled"}>${escapeHtml(data[f.key] ?? "")}</textarea>`;
@@ -1353,6 +1409,7 @@ function bindDrillMachineCard(projectId, m, dKey) {
     });
   });
   bindRepairItemField(el.querySelector(".ms-wrap"));
+  bindBreakdownPeriodsField(el.querySelector(".bp-wrap"), projectId, m.id, dKey, m.name);
 }
 function openDrillMachineModal(projectId, m) {
   const editing = !!m;
@@ -1525,8 +1582,13 @@ function renderEquipmentView() {
         if (delBtn) delBtn.addEventListener("click", async () => {
           if (await showConfirmModal(t("deleteLogConfirm"))) {
             showSaveIndicator(true);
-            await deleteEquipmentLog(currentProject.id, logId, CURRENT_USER);
-            showSaveIndicator();
+            try {
+              await deleteEquipmentLog(currentProject.id, logId, CURRENT_USER);
+              showSaveIndicator();
+            } catch (e) {
+              showSaveIndicator();
+              alert(t("equipSaveError") + "\n" + (e?.message || e));
+            }
           }
         });
       });
@@ -1560,12 +1622,17 @@ function renderEquipmentView() {
       const pid = await showRepeatProjectModal();
       if (!pid) return;
       showSaveIndicator(true);
-      const prevLog = await getLatestEquipmentLog(pid);
-      showSaveIndicator();
-      if (!prevLog) { alert(t("repeatProjectNone")); return; }
-      editingLogId = null;
-      draftItems = (prevLog.items || []).map((it) => ({ ...it }));
-      mode = "new"; render();
+      try {
+        const prevLog = await getLatestEquipmentLog(pid);
+        showSaveIndicator();
+        if (!prevLog) { alert(t("repeatProjectNone")); return; }
+        editingLogId = null;
+        draftItems = (prevLog.items || []).map((it) => ({ ...it }));
+        mode = "new"; render();
+      } catch (e) {
+        showSaveIndicator();
+        alert(t("equipSaveError") + "\n" + (e?.message || e));
+      }
     });
 
     if (projectsCache.length) loadProject(projSelect.value);
@@ -1592,7 +1659,8 @@ function renderEquipmentView() {
       </div>
       <div class="card">
         <h3 data-i18n="draftListTitle"></h3>
-        <div id="eq_draftTable"></div>
+        <div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div>
+        <div id="eq_draftTable" class="table-scroll"></div>
         <button class="btn btn-primary" id="eq_save" data-i18n="saveCheckout"></button>
       </div>
     `;
@@ -1685,6 +1753,9 @@ function renderEquipmentView() {
         else await createEquipmentCheckout(currentProject.id, items, CURRENT_USER);
         showSaveIndicator();
         mode = "list"; render();
+      } catch (e) {
+        showSaveIndicator();
+        alert(t("equipSaveError") + "\n" + (e?.message || e));
       } finally {
         saveBtn.disabled = false;
       }
@@ -1701,6 +1772,7 @@ function renderEquipmentView() {
       <button class="btn btn-ghost btn-sm" id="eq_back2" data-i18n="backToList"></button>
       <div class="card">
         <h3 data-i18n="checkinTitle"></h3>
+        <div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div>
         <div class="table-scroll"><table class="simple-table">
           <thead><tr>
             <th data-i18n="equipmentName"></th><th data-i18n="specColumn"></th>
@@ -1750,6 +1822,9 @@ function renderEquipmentView() {
         await saveEquipmentCheckin(currentProject.id, log.id, checkinItems, CURRENT_USER);
         showSaveIndicator();
         mode = "list"; render();
+      } catch (e) {
+        showSaveIndicator();
+        alert(t("equipSaveError") + "\n" + (e?.message || e));
       } finally {
         btn.disabled = false;
       }

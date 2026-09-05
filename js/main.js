@@ -11,10 +11,11 @@ import {
   watchActivity, dateKey, sumDailyLog,
   watchDrillingMachines, addDrillingMachine, updateDrillingMachine, deleteDrillingMachine, saveDrillingMachineDayLog, updateDrillingMachineField,
   watchEquipmentLogs, getLatestEquipmentLog, createEquipmentCheckout, updateEquipmentCheckout, saveEquipmentCheckin, deleteEquipmentLog,
+  watchMaterials, addMaterial, updateMaterial, deleteMaterial,
 } from "./store.js";
 import { applyI18n, getLang, setLang, t } from "./i18n.js";
 import { initTheme, toggleTheme, getTheme, applyTheme } from "./theme.js";
-import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, buildRepairHistoryHTML, buildEquipmentCheckoutHTML, buildEquipmentCheckinHTML, slugify } from "./report.js";
+import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, buildRepairHistoryHTML, buildEquipmentCheckoutHTML, buildEquipmentCheckinHTML, buildMaterialsPdfHTML, slugify } from "./report.js";
 import { EQUIPMENT_CATALOG, EQUIPMENT_CATEGORIES } from "./equipment-catalog.js";
 
 initTheme();
@@ -111,6 +112,7 @@ function navigateTo(view, param) {
   else if (view === "report") renderReportView(param);
   else if (view === "drilllog") renderDrillLogView(param);
   else if (view === "equipment") renderEquipmentView(param);
+  else if (view === "materials") renderMaterialsView();
   else if (view === "activity") renderActivityView();
   else if (view === "settings") renderSettingsView();
 }
@@ -1829,6 +1831,192 @@ function renderEquipmentView() {
         btn.disabled = false;
       }
     });
+  }
+
+  render();
+}
+
+// ============================================================
+// MATERIALS PRICE LIST VIEW (Bảng giá vật tư)
+// ============================================================
+function isUrlLike(str) { return /^https?:\/\//i.test(String(str || "").trim()); }
+function formatMaterialPrice(m) {
+  const val = Number(m.price) || 0;
+  if (m.currency === "USD") return "$" + val.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return val.toLocaleString("vi-VN") + " ₫";
+}
+function formatMaterialTime(ts) {
+  if (!ts) return "—";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const lang = getLang() === "vi" ? "vi-VN" : "en-US";
+  return d.toLocaleDateString(lang) + " " + d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
+}
+
+function openMaterialModal(material) {
+  const editing = !!material;
+  const html = `
+  <div class="modal-backdrop" id="mtModalBackdrop">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>${editing ? t("editMaterial") : t("addMaterial")}</h3>
+        <button class="icon-btn" id="mtModalClose">✕</button>
+      </div>
+      <div class="field"><label data-i18n="materialName"></label><input id="mt_name" value="${escapeAttr(material?.name)}" /></div>
+      <div class="field-row">
+        <div class="field"><label data-i18n="price"></label><input type="number" step="any" min="0" id="mt_price" value="${material ? material.price : ""}" /></div>
+        <div class="field" style="max-width:120px;"><label data-i18n="currency"></label>
+          <select id="mt_currency">
+            <option value="VND" ${material?.currency === "VND" || !material ? "selected" : ""}>VND</option>
+            <option value="USD" ${material?.currency === "USD" ? "selected" : ""}>USD</option>
+          </select>
+        </div>
+      </div>
+      <div class="field"><label data-i18n="buyLocation"></label><input id="mt_location" data-i18n-placeholder="buyLocationPlaceholder" value="${escapeAttr(material?.buyLocation)}" /></div>
+      <div class="field"><label data-i18n="imageUrl"></label><input id="mt_image" value="${escapeAttr(material?.imageUrl)}" placeholder="https://drive.google.com/..." /></div>
+      <p class="error-msg" id="mtModalError"></p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="mtModalCancel" data-i18n="cancel"></button>
+        <button class="btn btn-primary" id="mtModalSave" data-i18n="saveMaterial"></button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+  const backdrop = document.getElementById("mtModalBackdrop");
+  applyI18n(backdrop);
+  const close = () => backdrop.remove();
+  document.getElementById("mtModalClose").addEventListener("click", close);
+  document.getElementById("mtModalCancel").addEventListener("click", close);
+  document.getElementById("mtModalSave").addEventListener("click", async () => {
+    const name = document.getElementById("mt_name").value.trim();
+    const price = Number(document.getElementById("mt_price").value);
+    const currency = document.getElementById("mt_currency").value;
+    const buyLocation = document.getElementById("mt_location").value.trim();
+    const imageUrl = document.getElementById("mt_image").value.trim();
+    const errEl = document.getElementById("mtModalError");
+    if (!name) { errEl.textContent = t("materialNameRequired"); return; }
+    if (!(price >= 0)) { errEl.textContent = t("priceRequired"); return; }
+    const data = { name, price, currency, buyLocation, imageUrl };
+    const saveBtn = document.getElementById("mtModalSave");
+    saveBtn.disabled = true;
+    try {
+      showSaveIndicator(true);
+      if (editing) await updateMaterial(material.id, data, CURRENT_USER);
+      else await addMaterial(data, CURRENT_USER);
+      showSaveIndicator();
+      close();
+    } catch (e) {
+      showSaveIndicator();
+      errEl.textContent = (e?.message || String(e));
+      saveBtn.disabled = false;
+    }
+  });
+}
+
+function renderMaterialsView() {
+  let materials = [];
+  let searchTerm = "";
+
+  function matchesSearch(m) {
+    if (!searchTerm.trim()) return true;
+    const q = searchTerm.trim().toLowerCase();
+    return (m.name || "").toLowerCase().includes(q) || (m.buyLocation || "").toLowerCase().includes(q);
+  }
+
+  function render() {
+    mainView.innerHTML = topbarHtml("materialsTitle") + `
+      <div class="materials-search-wrap">
+        <input type="text" id="mt_search" class="materials-search" data-i18n-placeholder="searchMaterialsPlaceholder" value="${escapeAttr(searchTerm)}" />
+      </div>
+      <div class="report-toolbar materials-toolbar">
+        ${canEdit() ? `<button class="btn btn-primary" id="mt_add" data-i18n="addMaterial"></button>` : ""}
+        <button class="btn btn-ghost" id="mt_exportPdf" data-i18n="exportPdf"></button>
+        <button class="btn btn-ghost" id="mt_exportExcel" data-i18n="exportExcel"></button>
+      </div>
+      <div id="mt_list"></div>
+    `;
+    bindTopbar();
+
+    const searchInput = document.getElementById("mt_search");
+    searchInput.addEventListener("input", () => { searchTerm = searchInput.value; renderList(); });
+
+    const addBtn = document.getElementById("mt_add");
+    if (addBtn) addBtn.addEventListener("click", () => openMaterialModal(null));
+
+    document.getElementById("mt_exportPdf").addEventListener("click", async (e) => {
+      const btn = e.target;
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = "…";
+      try {
+        const filtered = materials.filter(matchesSearch);
+        const html = buildMaterialsPdfHTML({ materials: filtered, currentUser: CURRENT_USER, lang: getLang() });
+        const holder = document.createElement("div");
+        holder.style.position = "fixed"; holder.style.top = "0"; holder.style.left = "-99999px";
+        holder.innerHTML = html;
+        document.body.appendChild(holder);
+        await exportReportToPdf("materialsPrintArea", `bang_gia_vat_tu_${dateKey()}.pdf`);
+        document.body.removeChild(holder);
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    });
+
+    document.getElementById("mt_exportExcel").addEventListener("click", () => {
+      const filtered = materials.filter(matchesSearch);
+      const rows = filtered.map((m, i) => ({
+        [t("no")]: i + 1,
+        [t("materialName")]: m.name || "",
+        [t("price")]: m.price ?? "",
+        [t("currency")]: m.currency || "",
+        [t("buyLocation")]: m.buyLocation || "",
+        [t("imageUrl")]: m.imageUrl || "",
+        [t("lastUpdated")]: formatMaterialTime(m.updatedAt),
+      }));
+      const ws = window.XLSX.utils.json_to_sheet(rows);
+      const wb = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, "Materials");
+      window.XLSX.writeFile(wb, `bang_gia_vat_tu_${dateKey()}.xlsx`);
+    });
+
+    function renderList() {
+      const listEl = document.getElementById("mt_list");
+      const filtered = materials.filter(matchesSearch);
+      if (!materials.length) { listEl.innerHTML = `<div class="empty-state">${t("noMaterials")}</div>`; return; }
+      if (!filtered.length) { listEl.innerHTML = `<div class="empty-state">${t("noMaterialsFound")}</div>`; return; }
+      listEl.innerHTML = filtered.map((m) => `
+        <div class="card material-card" data-id="${m.id}">
+          <div class="item-head">
+            <h4>${escapeHtml(m.name || "—")}</h4>
+            <div class="item-actions">
+              ${canEdit() ? `<button class="btn btn-ghost btn-sm mt-edit" data-i18n="editMaterial"></button>` : ""}
+              ${isAdmin() ? `<button class="btn btn-danger btn-sm mt-delete" data-i18n="delete"></button>` : ""}
+            </div>
+          </div>
+          <div class="material-price">${escapeHtml(formatMaterialPrice(m))}</div>
+          <div class="material-meta">
+            ${m.buyLocation ? `<div class="material-location">📍 ${isUrlLike(m.buyLocation) ? `<a href="${escapeAttr(m.buyLocation)}" target="_blank" rel="noopener">${t("buyLocation")}</a>` : escapeHtml(m.buyLocation)}</div>` : ""}
+            ${m.imageUrl ? `<a class="btn btn-ghost btn-sm" href="${escapeAttr(m.imageUrl)}" target="_blank" rel="noopener" data-i18n="viewImage"></a>` : ""}
+          </div>
+          <div class="material-updated">${t("lastUpdated")}: ${formatMaterialTime(m.updatedAt)}</div>
+        </div>`).join("");
+      applyI18n(listEl);
+      listEl.querySelectorAll(".material-card").forEach((card) => {
+        const id = card.dataset.id;
+        const m = materials.find((x) => x.id === id);
+        const editBtn = card.querySelector(".mt-edit");
+        if (editBtn) editBtn.addEventListener("click", () => openMaterialModal(m));
+        const delBtn = card.querySelector(".mt-delete");
+        if (delBtn) delBtn.addEventListener("click", async () => {
+          if (await showConfirmModal(t("deleteMaterialConfirm"))) {
+            showSaveIndicator(true);
+            await deleteMaterial(id);
+            showSaveIndicator();
+          }
+        });
+      });
+    }
+
+    const unsub = watchMaterials((data) => { materials = data; renderList(); });
+    currentProjectUnsubs.push(unsub);
   }
 
   render();

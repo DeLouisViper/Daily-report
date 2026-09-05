@@ -172,6 +172,12 @@ label { font-size: 12.5px; color: var(--text-dim); display: block; margin-bottom
 .material-location { font-size: 13px; color: var(--text-dim); }
 .material-location a { color: var(--accent-2); }
 .material-updated { font-size: 11.5px; color: var(--text-dim); }
+
+/* ---------- Khối lượng đội khoan (Drill Team Payment) ---------- */
+.dtp-method-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
+.dtp-table tfoot td, .dtp-total-row td { font-weight: 800; background: var(--bg-elev-2); }
+.dtp-summary { margin-bottom: 14px; }
+.dtp-grand-total { font-size: 20px; font-weight: 800; margin-bottom: 4px; background: var(--accent-gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .equip-card .item-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .equip-card .item-head h4 { font-size: 14px; margin: 0; }
 .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 800; white-space: nowrap; }
@@ -450,6 +456,13 @@ tr:last-child td { border-bottom: none; }
 .sign-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 34px; text-align: center; font-size: 12px; }
 .sign-row .role { font-weight: 800; margin-bottom: 46px; }
 .sign-row .name { border-top: 1px solid #999; padding-top: 4px; font-size: 11px; color: #555; }
+
+/* Khối lượng đội khoan — bảng tổng cộng & khối thanh toán trong PDF */
+.report-total-row td { font-weight: 800; background: #f2f2f2; }
+.dtp-payment-block { margin-top: 10px; page-break-inside: avoid; }
+.dtp-grand-final { margin-top: 8px; text-align: right; padding: 10px 14px; border: 1.5px solid #16171b; }
+.dtp-grand-final-label { font-size: 12px; font-weight: 800; text-transform: uppercase; margin-bottom: 4px; }
+.dtp-grand-final-value { font-size: 16px; font-weight: 800; }
 
 @media print {
   body * { visibility: hidden; }

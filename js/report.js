@@ -537,6 +537,23 @@ export async function exportReportToPdf(elementId, filename) {
     // it's still readable/traceable without scrolling back.
     const pieces = computePagePieces(el, elRect, usableHeightPx);
 
+    // html2canvas flattens everything into a plain image, silently dropping every
+    // <a href>. Capture each link's position now (in the same coordinate frame
+    // used for page-splitting below) so we can re-attach them as real clickable
+    // PDF link annotations once each page's image has been placed.
+    const linkEls = [...el.querySelectorAll("a[href]")]
+      .map((a) => {
+        const r = a.getBoundingClientRect();
+        return {
+          href: a.getAttribute("href"),
+          topPx: Math.round((r.top - elRect.top) * pxPerCssPx),
+          bottomPx: Math.round((r.bottom - elRect.top) * pxPerCssPx),
+          leftPx: Math.round((r.left - elRect.left) * pxPerCssPx),
+          rightPx: Math.round((r.right - elRect.left) * pxPerCssPx),
+        };
+      })
+      .filter((l) => l.href && /^https?:\/\//i.test(l.href));
+
     const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
     const totalPages = pieces.length;
 
@@ -571,6 +588,21 @@ export async function exportReportToPdf(elementId, filename) {
 
       if (i > 0) pdf.addPage();
       pdf.addImage(imgData, "JPEG", 0, marginTopMm, pageWidthMm, sliceHeightMm, undefined, "MEDIUM");
+
+      // Re-attach clickable regions for any link whose original position falls
+      // within this page's body slice (accounting for the repeated header, if any).
+      linkEls.forEach((l) => {
+        const overlapTop = Math.max(l.topPx, bodyTopPx);
+        const overlapBottom = Math.min(l.bottomPx, bodyBottomPx);
+        if (overlapBottom <= overlapTop) return;
+        const yWithinSlicePx = headerHeightPx + (overlapTop - bodyTopPx);
+        const hPx = overlapBottom - overlapTop;
+        const xMm = l.leftPx / pxPerCssPx / pxPerMm;
+        const wMm = (l.rightPx - l.leftPx) / pxPerCssPx / pxPerMm;
+        const yMm = marginTopMm + yWithinSlicePx / pxPerCssPx / pxPerMm;
+        const hMm = hPx / pxPerCssPx / pxPerMm;
+        pdf.link(xMm, yMm, wMm, hMm, { url: l.href });
+      });
 
       if (totalPages > 1) {
         pdf.setFontSize(8);
@@ -755,16 +787,37 @@ function formatMaterialTimeReport(ts, lang) {
   return d.toLocaleDateString(locale) + " " + d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 }
 
+function splitLegacyBuyLocationReport(str) {
+  const s = String(str || "").trim();
+  if (!s) return { name: "", url: "" };
+  const m = s.match(/(https?:\/\/\S+)/i);
+  if (!m) return { name: s, url: "" };
+  const url = m[1];
+  const name = s.replace(url, "").replace(/[-–—:|]+$/, "").replace(/^[-–—:|]+/, "").trim();
+  return { name, url };
+}
+function buyLocationDisplayReport(m) {
+  const name = (m.buyLocationName || "").trim();
+  const url = (m.buyLocationUrl || "").trim();
+  if (name || url) return { text: name || url, url: url || null };
+  const legacy = splitLegacyBuyLocationReport(m.buyLocation);
+  if (!legacy.name && !legacy.url) return null;
+  return { text: legacy.name || legacy.url, url: legacy.url || null };
+}
+
 export function buildMaterialsPdfHTML({ materials, currentUser, lang }) {
   const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
-  const rows = (materials || []).map((m, i) => `<tr>
+  const rows = (materials || []).map((m, i) => {
+    const loc = buyLocationDisplayReport(m);
+    return `<tr>
       <td class="num">${i + 1}</td>
       <td>${escapeHtml(m.name || "—")}</td>
       <td class="num">${escapeHtml(formatMaterialPriceReport(m))}</td>
-      <td>${m.buyLocation ? (isUrlLikeReport(m.buyLocation) ? `<a href="${escapeHtml(m.buyLocation)}">${escapeHtml(t("buyLocation"))}</a>` : escapeHtml(m.buyLocation)) : "—"}</td>
+      <td>${loc ? (loc.url ? `<a href="${escapeHtml(loc.url)}">${escapeHtml(loc.text)}</a>` : escapeHtml(loc.text)) : "—"}</td>
       <td>${m.imageUrl ? `<a href="${escapeHtml(m.imageUrl)}">${escapeHtml(t("viewImage"))}</a>` : "—"}</td>
       <td>${escapeHtml(formatMaterialTimeReport(m.updatedAt, lang))}</td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 
   return `
   <div class="report-page" id="materialsPrintArea">

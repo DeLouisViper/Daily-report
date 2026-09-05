@@ -2,7 +2,7 @@ import { sumDailyLog } from "./store.js";
 import { t } from "./i18n.js";
 import { EQUIPMENT_CATALOG } from "./equipment-catalog.js";
 
-const DRILL_ICON_PATH = "M1623 5096 l-28 -24 -3 -195 c-3 -207 3 -255 40 -302 38 -49 90 -65 211 -65 l108 0 -3 -92 -3 -93 -68 -5 c-109 -8 -107 -2 -107 -298 l0 -247 191 -287 c207 -310 205 -308 295 -308 l44 0 0 -1555 c0 -1118 3 -1561 11 -1578 12 -26 47 -47 79 -47 30 0 416 293 423 321 4 13 7 662 7 1442 l0 1417 44 0 c90 0 88 -2 295 308 l191 287 0 247 c0 296 2 290 -107 298 l-68 5 -3 93 -3 92 108 0 c121 0 173 16 211 65 37 47 43 95 40 302 l-3 195 -28 24 -28 24 -909 0 -909 0 -28 -24z m1737 -281 l0 -135 -800 0 -800 0 0 135 0 135 800 0 800 0 0 -135z m-352 -397 l-3 -93 -445 0 -445 0 -3 93 -3 92 451 0 451 0 -3 -92z m172 -398 l0 -140 -620 0 -620 0 0 140 0 140 620 0 620 0 0 -140z m-70 -305 c0 -3 -54 -86 -120 -185 l-120 -180 -310 0 -310 0 -120 180 c-66 99 -120 182 -120 185 0 3 248 5 550 5 303 0 550 -2 550 -5z m-460 -605 l0 -69 -77 -59 c-43 -32 -84 -62 -90 -66 -10 -6 -13 23 -13 128 l0 136 90 0 90 0 0 -70z m0 -397 l-1 -118 -81 -60 c-45 -33 -85 -61 -90 -63 -4 -2 -8 48 -8 111 l0 115 88 66 c48 36 88 66 90 66 1 0 2 -53 2 -117z m0 -441 l0 -117 -90 -68 -90 -67 0 118 0 117 88 67 c48 37 88 67 90 67 1 1 2 -52 2 -117z m0 -440 l0 -117 -90 -68 -90 -67 0 118 0 117 88 67 c48 37 88 67 90 67 1 1 2 -52 2 -117z m0 -446 l0 -114 -57 -43 c-32 -23 -73 -54 -90 -67 l-33 -24 0 118 1 119 82 62 c45 34 85 62 90 62 4 1 7 -50 7 -113z m0 -441 l0 -114 -77 -59 c-43 -32 -84 -62 -90 -66 -10 -6 -13 19 -13 108 l0 115 87 66 c47 36 88 65 90 65 1 0 3 -52 3 -115z m0 -442 l-1 -118 -81 -60 c-45 -33 -85 -61 -90 -63 -4 -2 -8 48 -8 111 l0 115 88 66 c48 36 88 66 90 66 1 0 2 -53 2 -117z";
+const DRILL_ICON_INNER = `<rect x="10" y="2" width="4" height="2.6" rx="0.5"/><path d="M10.2 4.6 L9.4 14.5"/><path d="M13.8 4.6 L14.6 14.5"/><path d="M9.4 14.5 L12 21 L14.6 14.5"/><path d="M9.9 8 L14.1 8"/><path d="M9.65 11.2 L14.35 11.2"/>`;
 
 // Rounding a small-but-nonzero progress (e.g. 0.8%) to a whole number shows a
 // misleading "0%". Fall back to one decimal place only in that edge case.
@@ -215,12 +215,15 @@ const DRILL_LOG_FIELDS_REPORT = [
   { key: "lunchBreak", label: "lunchBreak" },
   { key: "afternoonStart", label: "afternoonStart" },
   { key: "endOfDay", label: "endOfDay" },
-  { key: "breakdownStart", label: "breakdownStart" },
-  { key: "repairEnd", label: "repairEnd" },
+  { key: "breakdownPeriods", label: "breakdownPeriods" },
   { key: "repairItem", label: "repairItem" },
   { key: "suspensionTime", label: "suspensionTime" },
   { key: "suspensionReason", label: "suspensionReason" },
 ];
+function formatBreakdownPeriods(periods) {
+  if (!Array.isArray(periods) || !periods.length) return "—";
+  return periods.map((p) => `${p.start || "?"} → ${p.end || "?"}`).join("; ");
+}
 function getMachineDayLogRaw(m, dKey) {
   const logs = m.dailyLogs || {};
   if (logs[dKey]) return logs[dKey];
@@ -235,9 +238,12 @@ export function buildDrillLogHTML({ project, machines, dKey, currentUser, lang }
 
   const machinesHtml = (machines || []).map((m) => {
     const data = getMachineDayLogRaw(m, dKey);
-    const rows = DRILL_LOG_FIELDS_REPORT.map((f) => `<tr><td>${t(f.label)}</td><td>${escapeHtml(data[f.key] || "—")}</td></tr>`).join("");
+    const rows = DRILL_LOG_FIELDS_REPORT.map((f) => {
+      const val = f.key === "breakdownPeriods" ? formatBreakdownPeriods(data[f.key]) : (data[f.key] || "—");
+      return `<tr><td>${t(f.label)}</td><td>${escapeHtml(val)}</td></tr>`;
+    }).join("");
     return `<div class="report-section">
-      <div class="section-title"><svg viewBox="0 0 512 512" width="13" height="13" style="vertical-align:-1px;margin-right:4px;" aria-hidden="true"><path fill="currentColor" d="${DRILL_ICON_PATH}" /></svg>${escapeHtml(m.name || "—")}</div>
+      <div class="section-title"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;" aria-hidden="true">${DRILL_ICON_INNER}</svg>${escapeHtml(m.name || "—")}</div>
       <table class="report-info-table report-table-closed">${rows}</table>
     </div>`;
   }).join("");
@@ -287,7 +293,7 @@ export function buildDrillLogHTML({ project, machines, dKey, currentUser, lang }
 }
 
 // Báo cáo tổng hợp lịch sử sửa chữa: gom tất cả các ngày có ghi nhận hỏng máy /
-// sửa chữa (breakdownStart, repairEnd hoặc repairItem) của 1 máy hoặc tất cả máy,
+// sửa chữa (breakdownPeriods hoặc repairItem) của 1 máy hoặc tất cả máy,
 // sắp xếp theo ngày, để phục vụ việc kiểm soát bảo trì thiết bị theo thời gian
 // (khác với buildDrillLogHTML vốn chỉ hiển thị 1 ngày cho tất cả máy).
 export function buildRepairHistoryHTML({ project, machines, currentUser, lang, machineLabel }) {
@@ -298,14 +304,14 @@ export function buildRepairHistoryHTML({ project, machines, currentUser, lang, m
     const logs = m.dailyLogs || {};
     Object.keys(logs).sort().forEach((dKey) => {
       const d = logs[dKey] || {};
-      const hasRepairInfo = (d.repairItem && String(d.repairItem).trim()) || d.breakdownStart || d.repairEnd;
+      const periods = Array.isArray(d.breakdownPeriods) ? d.breakdownPeriods : [];
+      const hasRepairInfo = (d.repairItem && String(d.repairItem).trim()) || periods.length > 0;
       if (!hasRepairInfo) return;
       rows.push({
         dKey,
         machine: m.name || "—",
         operator: d.operator || "",
-        breakdownStart: d.breakdownStart || "",
-        repairEnd: d.repairEnd || "",
+        periods: formatBreakdownPeriods(periods),
         repairItem: d.repairItem || "",
         suspensionReason: d.suspensionReason || "",
       });
@@ -317,8 +323,7 @@ export function buildRepairHistoryHTML({ project, machines, currentUser, lang, m
     <td class="num">${r.dKey.split("-").reverse().join("/")}</td>
     <td>${escapeHtml(r.machine)}</td>
     <td>${escapeHtml(r.operator || "—")}</td>
-    <td class="num">${escapeHtml(r.breakdownStart || "—")}</td>
-    <td class="num">${escapeHtml(r.repairEnd || "—")}</td>
+    <td>${escapeHtml(r.periods)}</td>
     <td>${escapeHtml(r.repairItem || "—")}</td>
     <td>${escapeHtml(r.suspensionReason || "—")}</td>
   </tr>`).join("");
@@ -350,9 +355,9 @@ export function buildRepairHistoryHTML({ project, machines, currentUser, lang, m
     <div class="report-section">
       <table class="report-table-closed">
         <thead><tr>
-          <th>${t("reportDate")}</th><th>${t("machine")}</th><th>${t("operator")}</th><th>${t("breakdownStart")}</th><th>${t("repairEnd")}</th><th>${t("repairItem")}</th><th>${t("suspensionReason")}</th>
+          <th>${t("reportDate")}</th><th>${t("machine")}</th><th>${t("operator")}</th><th>${t("breakdownPeriods")}</th><th>${t("repairItem")}</th><th>${t("suspensionReason")}</th>
         </tr></thead>
-        <tbody>${rowsHtml || `<tr><td colspan="7" style="text-align:center;color:#888;">${t("noRepairRecords")}</td></tr>`}</tbody>
+        <tbody>${rowsHtml || `<tr><td colspan="6" style="text-align:center;color:#888;">${t("noRepairRecords")}</td></tr>`}</tbody>
       </table>
     </div>
 
@@ -451,17 +456,22 @@ export function computePagePieces(el, elRect, usableHeightPx) {
     const remainingOnPage = pageHasContent ? (pageTop + usableHeightPx - pageBottom) : usableHeightPx;
 
     if (childHeight > remainingOnPage) {
-      const table = child.querySelector("table");
-      const hasRows = table && table.querySelectorAll("tbody tr").length > 0;
-      if (hasRows) {
-        const firstPieceTop = pageHasContent ? pageTop : childTop;
-        const firstPieceBudgetBottom = firstPieceTop + usableHeightPx;
-        pieces.push(...splitTableSection(child, table, elRect.top, usableHeightPx, childTop, childBottom, firstPieceTop, firstPieceBudgetBottom));
-        pageHasContent = false;
-      } else if (childHeight > usableHeightPx) {
-        flushPage();
-        pieces.push({ top: childTop, bottom: childBottom, headerRect: null }); // oversized, nothing to split by — best effort
+      if (childHeight > usableHeightPx) {
+        // Genuinely taller than one whole page — split at row boundaries if possible.
+        const table = child.querySelector("table");
+        const hasRows = table && table.querySelectorAll("tbody tr").length > 0;
+        if (hasRows) {
+          const firstPieceTop = pageHasContent ? pageTop : childTop;
+          const firstPieceBudgetBottom = firstPieceTop + usableHeightPx;
+          pieces.push(...splitTableSection(child, table, elRect.top, usableHeightPx, childTop, childBottom, firstPieceTop, firstPieceBudgetBottom));
+          pageHasContent = false;
+        } else {
+          flushPage();
+          pieces.push({ top: childTop, bottom: childBottom, headerRect: null }); // oversized, nothing to split by — best effort
+        }
       } else {
+        // Fits comfortably on a fresh page — move it there whole instead of
+        // mid-table splitting just because the *remaining* space ran out.
         flushPage();
         pageTop = childTop;
         pageBottom = childBottom;

@@ -835,6 +835,155 @@ export function buildMaterialsPdfHTML({ materials, currentUser, lang }) {
   </div>`;
 }
 
+// ============================================================
+// KHỐI LƯỢNG ĐỘI KHOAN (Drill Team Payment) REPORT
+// ============================================================
+function dtpMoney(val, currency) {
+  const n = Number(val) || 0;
+  if (currency === "USD") return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return n.toLocaleString("vi-VN") + " ₫";
+}
+function dtpFormatTotalsReport(totals) {
+  const entries = Object.entries(totals || {}).filter(([, v]) => Math.abs(v) > 1e-9 || Object.keys(totals).length === 1);
+  if (!entries.length) return [dtpMoney(0, "VND")];
+  return entries.map(([cur, v]) => dtpMoney(v, cur));
+}
+
+export function buildDrillTeamPaymentPdfHTML({
+  project, method, team, drillTeamRep, boreholes, days,
+  soilRate, soilCurrency, rockRate, rockCurrency,
+  workerCurrency, laborCurrency, startDate, endDate,
+  allowanceAmount, allowanceCurrency, advances, totals, currentUser, lang,
+}) {
+  const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
+  const totalAdvance = {};
+  (advances || []).forEach((a) => { totalAdvance[a.currency] = (totalAdvance[a.currency] || 0) + (Number(a.amount) || 0); });
+
+  let volumeSection, volumeTotalsLine;
+  if (method === "contract") {
+    const totalSoilM = (boreholes || []).reduce((s, b) => s + (Number(b.soilM) || 0), 0);
+    const totalRockM = (boreholes || []).reduce((s, b) => s + (Number(b.rockM) || 0), 0);
+    const totalSoilMoney = totalSoilM * soilRate;
+    const totalRockMoney = totalRockM * rockRate;
+    const rows = (boreholes || []).map((b) => {
+      const soilM = Number(b.soilM) || 0, rockM = Number(b.rockM) || 0;
+      const soilMoney = soilM * soilRate, rockMoney = rockM * rockRate;
+      return `<tr>
+        <td>${escapeHtml(b.name || "—")}</td>
+        <td class="num">${soilM}</td><td class="num">${dtpMoney(soilRate, soilCurrency)}</td><td class="num">${dtpMoney(soilMoney, soilCurrency)}</td>
+        <td class="num">${rockM}</td><td class="num">${dtpMoney(rockRate, rockCurrency)}</td><td class="num">${dtpMoney(rockMoney, rockCurrency)}</td>
+        <td class="num">${soilCurrency === rockCurrency ? dtpMoney(soilMoney + rockMoney, soilCurrency) : `${dtpMoney(soilMoney, soilCurrency)} + ${dtpMoney(rockMoney, rockCurrency)}`}</td>
+      </tr>`;
+    }).join("");
+    volumeSection = `
+      <div class="report-section">
+        <table class="report-table-closed">
+          <thead><tr>
+            <th>${t("boreholeName")}</th><th>${t("soilM")}</th><th>${t("soilRate")}</th><th>${t("soilMoney")}</th>
+            <th>${t("rockM")}</th><th>${t("rockRate")}</th><th>${t("rockMoney")}</th><th>${t("total")}</th>
+          </tr></thead>
+          <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:#888;">${t("noCompletedBoreholes")}</td></tr>`}</tbody>
+          <tfoot><tr class="report-total-row">
+            <td>${t("total")}</td><td class="num">${totalSoilM}</td><td></td><td class="num">${dtpMoney(totalSoilMoney, soilCurrency)}</td>
+            <td class="num">${totalRockM}</td><td></td><td class="num">${dtpMoney(totalRockMoney, rockCurrency)}</td>
+            <td class="num">${soilCurrency === rockCurrency ? dtpMoney(totalSoilMoney + totalRockMoney, soilCurrency) : `${dtpMoney(totalSoilMoney, soilCurrency)} + ${dtpMoney(totalRockMoney, rockCurrency)}`}</td>
+          </tr></tfoot>
+        </table>
+      </div>`;
+    volumeTotalsLine = soilCurrency === rockCurrency
+      ? [dtpMoney(totalSoilMoney + totalRockMoney, soilCurrency)]
+      : [dtpMoney(totalSoilMoney, soilCurrency), dtpMoney(totalRockMoney, rockCurrency)];
+  } else {
+    const rows = (days || []).map((d) => {
+      const workerMoney = d.workerCount * d.workerRate, laborMoney = d.laborCount * d.laborRate;
+      return `<tr>
+        <td>${d.dKey.split("-").reverse().join("/")}</td>
+        <td class="num">${d.workerCount}</td><td class="num">${dtpMoney(d.workerRate, workerCurrency)}</td><td class="num">${dtpMoney(workerMoney, workerCurrency)}</td>
+        <td class="num">${d.laborCount}</td><td class="num">${dtpMoney(d.laborRate, laborCurrency)}</td><td class="num">${dtpMoney(laborMoney, laborCurrency)}</td>
+        <td class="num">${workerCurrency === laborCurrency ? dtpMoney(workerMoney + laborMoney, workerCurrency) : `${dtpMoney(workerMoney, workerCurrency)} + ${dtpMoney(laborMoney, laborCurrency)}`}</td>
+      </tr>`;
+    }).join("");
+    const totalWorkerMoney = (days || []).reduce((s, d) => s + d.workerCount * d.workerRate, 0);
+    const totalLaborMoney = (days || []).reduce((s, d) => s + d.laborCount * d.laborRate, 0);
+    volumeSection = `
+      <div class="report-section">
+        <table class="report-info-table report-table-closed">
+          <tr><td>${t("startDate")}</td><td>${startDate ? startDate.split("-").reverse().join("/") : "—"}</td><td>${t("endDate")}</td><td>${endDate ? endDate.split("-").reverse().join("/") : "—"}</td></tr>
+          <tr><td>${t("totalDays")}</td><td colspan="3">${(days || []).length} ${t("days")}</td></tr>
+        </table>
+      </div>
+      <div class="report-section">
+        <table class="report-table-closed">
+          <thead><tr>
+            <th>${t("dateCol")}</th><th>${t("workerCount")}</th><th>${t("workerRate")}</th><th>${t("workerMoney")}</th>
+            <th>${t("laborCount")}</th><th>${t("laborRate")}</th><th>${t("laborMoney")}</th><th>${t("dayTotal")}</th>
+          </tr></thead>
+          <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:#888;">${t("selectDateRangeFirst")}</td></tr>`}</tbody>
+          <tfoot><tr class="report-total-row">
+            <td>${t("total")}</td><td></td><td></td><td class="num">${dtpMoney(totalWorkerMoney, workerCurrency)}</td>
+            <td></td><td></td><td class="num">${dtpMoney(totalLaborMoney, laborCurrency)}</td>
+            <td class="num">${workerCurrency === laborCurrency ? dtpMoney(totalWorkerMoney + totalLaborMoney, workerCurrency) : `${dtpMoney(totalWorkerMoney, workerCurrency)} + ${dtpMoney(totalLaborMoney, laborCurrency)}`}</td>
+          </tr></tfoot>
+        </table>
+      </div>`;
+    volumeTotalsLine = workerCurrency === laborCurrency
+      ? [dtpMoney(totalWorkerMoney + totalLaborMoney, workerCurrency)]
+      : [dtpMoney(totalWorkerMoney, workerCurrency), dtpMoney(totalLaborMoney, laborCurrency)];
+  }
+
+  const advanceRows = (advances || []).map((a) => `<tr>
+      <td>${a.date ? a.date.split("-").reverse().join("/") : "—"}</td>
+      <td class="num">${dtpMoney(a.amount, a.currency)}</td>
+      <td>${escapeHtml(a.note || "—")}</td>
+    </tr>`).join("");
+  const advancesSection = (advances || []).length ? `
+    <div class="report-section">
+      <table class="report-table-closed">
+        <thead><tr><th>${t("advanceDate")}</th><th>${t("advanceAmount")}</th><th>${t("noteCol")}</th></tr></thead>
+        <tbody>${advanceRows}</tbody>
+      </table>
+    </div>` : "";
+
+  return `
+  <div class="report-page" id="drillPayPrintArea">
+    ${reportHead(lang, exportedAt)}
+    <div class="report-title">${method === "contract" ? t("drillPayContractTitle") : t("drillPayDailyTitle")}</div>
+    <div class="report-section">
+      <table class="report-info-table report-table-closed">
+        <tr><td>${t("project")}</td><td>${escapeHtml(project?.name || "—")}</td></tr>
+        <tr><td>${t("fieldEngineer")}</td><td>${escapeHtml(project?.siteEngineer || "—")}</td></tr>
+        <tr><td>${t("drillTeamLabel")}</td><td>${escapeHtml(team || "—")}</td></tr>
+      </table>
+    </div>
+
+    ${volumeSection}
+    ${advancesSection}
+
+    <div class="report-section dtp-payment-block">
+      <table class="report-info-table report-table-closed">
+        <tr><td>${t("volumeTotalLabel")}</td><td>${volumeTotalsLine.join("; ")}</td></tr>
+        <tr><td>+ ${t("allowanceTitle")}</td><td>${allowanceAmount ? dtpMoney(allowanceAmount, allowanceCurrency) : dtpMoney(0, "VND")}</td></tr>
+        <tr><td>− ${t("totalAdvanceLabel")}</td><td>${Object.keys(totalAdvance).length ? Object.entries(totalAdvance).map(([c, v]) => dtpMoney(v, c)).join("; ") : dtpMoney(0, "VND")}</td></tr>
+      </table>
+      <div class="dtp-grand-final">
+        <div class="dtp-grand-final-label">${t("grandTotalFinalLabel")}</div>
+        ${dtpFormatTotalsReport(totals).map((line) => `<div class="dtp-grand-final-value">${line}</div>`).join("")}
+      </div>
+    </div>
+
+    <div class="sign-row" style="grid-template-columns: repeat(2, 1fr);">
+      <div>
+        <div class="role">${t("preparedBy")}</div>
+        <div class="name">${escapeHtml(currentUser?.name || currentUser?.email || "")}</div>
+      </div>
+      <div>
+        <div class="role">${t("drillTeamRepLabel")}</div>
+        <div class="name">${escapeHtml(drillTeamRep || "")}${drillTeamRep ? "" : "&nbsp;"}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
 function escapeHtml(str) {
   return String(str ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

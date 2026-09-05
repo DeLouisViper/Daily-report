@@ -309,6 +309,23 @@ export async function deleteMaterial(id) {
   await deleteDoc(doc(db, "materials", id));
 }
 
+// ---------- Khối lượng đội khoan (Drill Team Payment) ----------
+// Mỗi lần lập bảng thanh toán được lưu thành 1 document để có thể tra cứu lại
+// sau này (mở rộng lịch sử thanh toán trong tương lai theo yêu cầu).
+export function watchDrillTeamPayments(projectId, cb) {
+  const q = query(collection(db, "projects", projectId, "drillTeamPayments"), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+}
+export async function saveDrillTeamPayment(projectId, data, user) {
+  const ref = await addDoc(collection(db, "projects", projectId, "drillTeamPayments"), {
+    ...data,
+    createdAt: serverTimestamp(),
+    createdBy: user?.name || user?.email || "—",
+  });
+  await logActivity(projectId, user, "created", `Bảng khối lượng đội khoan (${data.team || "—"})`);
+  return ref.id;
+}
+
 // ---------- Helpers ----------
 export function dateKey(d = new Date()) {
   const y = d.getFullYear();

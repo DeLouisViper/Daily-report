@@ -1929,298 +1929,327 @@ function renderDrillTeamPaymentView() {
     return totals;
   }
 
-  function render() {
+  // ---------- Dựng khung giao diện tĩnh MỘT LẦN DUY NHẤT ----------
+  // (Trước đây toàn bộ khung + select dự án bị dựng lại mỗi khi Firestore báo
+  // có dữ liệu mới, và trong lúc dựng lại lại tự gọi loadProject() lần nữa —
+  // tạo thành vòng lặp vô hạn gây giật/lag. Giờ chỉ các phần DỮ LIỆU ĐỘNG mới
+  // được vẽ lại khi có thay đổi; khung + các sự kiện chỉ gắn đúng 1 lần.)
+  mainView.innerHTML = topbarHtml("drillPayTitle") + `
+    <div class="report-toolbar">
+      <div class="field"><label data-i18n="selectProject"></label><select id="dp_project"></select></div>
+      <div class="field"><label data-i18n="drillTeamLabel"></label><select id="dp_team"><option value="">—</option></select></div>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="completedBoreholesTitle"></h3>
+      <div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div>
+      <div class="table-scroll"><table class="simple-table dtp-table" id="dp_boreholesTable"></table></div>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="paymentMethod"></h3>
+      <div class="dtp-method-toggle">
+        <button type="button" class="btn btn-primary" id="dp_methodContract" data-i18n="methodContract"></button>
+        <button type="button" class="btn btn-ghost" id="dp_methodDaily" data-i18n="methodDaily"></button>
+      </div>
+      <div id="dp_methodBody"></div>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="allowanceTitle"></h3>
+      <div class="field-row">
+        <div class="field"><label data-i18n="allowanceAmount"></label><input type="number" min="0" id="dp_allowance" value="" /></div>
+        <div class="field" style="max-width:120px;"><label data-i18n="currency"></label>
+          <select id="dp_allowanceCurrency"><option value="VND">VND</option><option value="USD">USD</option></select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="advancesTitle"></h3>
+      <div id="dp_advancesTable"></div>
+      <button type="button" class="btn btn-ghost btn-sm" id="dp_addAdvance" data-i18n="addAdvance"></button>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="drillTeamRepTitle"></h3>
+      <div class="field"><label data-i18n="drillTeamRepLabel2"></label><input id="dp_rep" value="" data-i18n-placeholder="drillTeamRepPlaceholder" /></div>
+    </div>
+
+    <div class="card" id="dp_summaryCard">
+      <h3 data-i18n="grandTotalTitle"></h3>
+      <div id="dp_summary" class="dtp-summary"></div>
+      <button class="btn btn-primary" id="dp_exportPdf" data-i18n="saveAndExportPdf"></button>
+    </div>
+  `;
+  bindTopbar();
+
+  const projSelect = document.getElementById("dp_project");
+  const teamSelect = document.getElementById("dp_team");
+  const methodContractBtn = document.getElementById("dp_methodContract");
+  const methodDailyBtn = document.getElementById("dp_methodDaily");
+  const repInput = document.getElementById("dp_rep");
+
+  projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+  projSelect.addEventListener("change", () => loadProject(projSelect.value));
+
+  teamSelect.addEventListener("change", () => {
+    selectedTeam = teamSelect.value;
+    if (!drillTeamRep) { drillTeamRep = selectedTeam; repInput.value = drillTeamRep; }
+    renderDynamic();
+  });
+
+  function updateMethodButtons() {
+    methodContractBtn.className = `btn ${method === "contract" ? "btn-primary" : "btn-ghost"}`;
+    methodDailyBtn.className = `btn ${method === "daily" ? "btn-primary" : "btn-ghost"}`;
+  }
+  methodContractBtn.addEventListener("click", () => { method = "contract"; updateMethodButtons(); renderMethodBody(); renderSummary(); });
+  methodDailyBtn.addEventListener("click", () => { method = "daily"; updateMethodButtons(); renderMethodBody(); renderSummary(); });
+
+  document.getElementById("dp_allowance").addEventListener("change", (e) => { allowanceAmount = Number(e.target.value) || 0; renderSummary(); });
+  document.getElementById("dp_allowanceCurrency").addEventListener("change", (e) => { allowanceCurrency = e.target.value; renderSummary(); });
+
+  document.getElementById("dp_addAdvance").addEventListener("click", () => {
+    advances.push({ date: dateKey(), amount: 0, currency: "VND", note: "" });
+    renderAdvancesTable();
+    renderSummary();
+  });
+
+  repInput.addEventListener("change", (e) => { drillTeamRep = e.target.value.trim(); });
+
+  document.getElementById("dp_exportPdf").addEventListener("click", exportDrillTeamPaymentPdf);
+
+  function fillTeamSelect() {
+    const teams = teamsList();
+    const prevVal = teamSelect.value;
+    teamSelect.innerHTML = `<option value="">—</option>` + teams.map((tm) => `<option value="${escapeAttr(tm)}">${escapeHtml(tm)}</option>`).join("");
+    if (teams.includes(prevVal)) teamSelect.value = prevVal;
+  }
+
+  function renderBoreholesTable() {
+    const el = document.getElementById("dp_boreholesTable");
     const mb = matchedBoreholes();
     const totalSoilM = mb.reduce((s, b) => s + (Number(b.soilM) || 0), 0);
     const totalRockM = mb.reduce((s, b) => s + (Number(b.rockM) || 0), 0);
-
-    mainView.innerHTML = topbarHtml("drillPayTitle") + `
-      <div class="report-toolbar">
-        <div class="field"><label data-i18n="selectProject"></label><select id="dp_project"></select></div>
-        <div class="field"><label data-i18n="drillTeamLabel"></label><select id="dp_team"><option value="">—</option></select></div>
-      </div>
-
-      <div class="card">
-        <h3 data-i18n="completedBoreholesTitle"></h3>
-        <div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div>
-        <div class="table-scroll"><table class="simple-table dtp-table">
-          <thead><tr><th data-i18n="boreholeName"></th><th data-i18n="soilM"></th><th data-i18n="rockM"></th><th data-i18n="totalM"></th></tr></thead>
-          <tbody>
-            ${mb.length ? mb.map((b) => `<tr><td>${escapeHtml(b.name || "—")}</td><td class="num">${b.soilM || 0}</td><td class="num">${b.rockM || 0}</td><td class="num">${(Number(b.soilM) || 0) + (Number(b.rockM) || 0)}</td></tr>`).join("") : `<tr><td colspan="4" style="text-align:center;color:var(--text-dim);">${t("noCompletedBoreholes")}</td></tr>`}
-          </tbody>
-          ${mb.length ? `<tfoot><tr class="dtp-total-row"><td>${t("total")}</td><td class="num">${totalSoilM}</td><td class="num">${totalRockM}</td><td class="num">${totalSoilM + totalRockM}</td></tr></tfoot>` : ""}
-        </table></div>
-      </div>
-
-      <div class="card">
-        <h3 data-i18n="paymentMethod"></h3>
-        <div class="dtp-method-toggle">
-          <button type="button" class="btn ${method === "contract" ? "btn-primary" : "btn-ghost"}" id="dp_methodContract" data-i18n="methodContract"></button>
-          <button type="button" class="btn ${method === "daily" ? "btn-primary" : "btn-ghost"}" id="dp_methodDaily" data-i18n="methodDaily"></button>
-        </div>
-        <div id="dp_methodBody"></div>
-      </div>
-
-      <div class="card">
-        <h3 data-i18n="allowanceTitle"></h3>
-        <div class="field-row">
-          <div class="field"><label data-i18n="allowanceAmount"></label><input type="number" min="0" id="dp_allowance" value="${allowanceAmount || ""}" /></div>
-          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label>
-            <select id="dp_allowanceCurrency"><option value="VND" ${allowanceCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${allowanceCurrency === "USD" ? "selected" : ""}>USD</option></select>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3 data-i18n="advancesTitle"></h3>
-        <div id="dp_advancesTable"></div>
-        <button type="button" class="btn btn-ghost btn-sm" id="dp_addAdvance" data-i18n="addAdvance"></button>
-      </div>
-
-      <div class="card">
-        <h3 data-i18n="drillTeamRepTitle"></h3>
-        <div class="field"><label data-i18n="drillTeamRepLabel2"></label><input id="dp_rep" value="${escapeAttr(drillTeamRep)}" data-i18n-placeholder="drillTeamRepPlaceholder" /></div>
-      </div>
-
-      <div class="card" id="dp_summaryCard">
-        <h3 data-i18n="grandTotalTitle"></h3>
-        <div id="dp_summary" class="dtp-summary"></div>
-        <button class="btn btn-primary" id="dp_exportPdf" data-i18n="saveAndExportPdf"></button>
-      </div>
+    el.innerHTML = `
+      <thead><tr><th data-i18n="boreholeName"></th><th data-i18n="soilM"></th><th data-i18n="rockM"></th><th data-i18n="totalM"></th></tr></thead>
+      <tbody>
+        ${mb.length ? mb.map((b) => `<tr><td>${escapeHtml(b.name || "—")}</td><td class="num">${b.soilM || 0}</td><td class="num">${b.rockM || 0}</td><td class="num">${(Number(b.soilM) || 0) + (Number(b.rockM) || 0)}</td></tr>`).join("") : `<tr><td colspan="4" style="text-align:center;color:var(--text-dim);">${t("noCompletedBoreholes")}</td></tr>`}
+      </tbody>
+      ${mb.length ? `<tfoot><tr class="dtp-total-row"><td>${t("total")}</td><td class="num">${totalSoilM}</td><td class="num">${totalRockM}</td><td class="num">${totalSoilM + totalRockM}</td></tr></tfoot>` : ""}
     `;
-    bindTopbar();
-
-    const projSelect = document.getElementById("dp_project");
-    projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
-    if (currentProject) projSelect.value = currentProject.id;
-    projSelect.addEventListener("change", () => loadProject(projSelect.value));
-
-    const teamSelect = document.getElementById("dp_team");
-    teamSelect.addEventListener("change", () => { selectedTeam = teamSelect.value; drillTeamRep = drillTeamRep || selectedTeam; render(); });
-
-    function fillTeamSelect() {
-      const teams = teamsList();
-      teamSelect.innerHTML = `<option value="">—</option>` + teams.map((tm) => `<option value="${escapeAttr(tm)}" ${tm === selectedTeam ? "selected" : ""}>${escapeHtml(tm)}</option>`).join("");
-    }
-    fillTeamSelect();
-
-    document.getElementById("dp_methodContract").addEventListener("click", () => { method = "contract"; render(); });
-    document.getElementById("dp_methodDaily").addEventListener("click", () => { method = "daily"; render(); });
-
-    renderMethodBody();
-    renderAdvancesTable();
-    renderSummary();
-
-    document.getElementById("dp_allowance").addEventListener("change", (e) => { allowanceAmount = Number(e.target.value) || 0; renderSummary(); });
-    document.getElementById("dp_allowanceCurrency").addEventListener("change", (e) => { allowanceCurrency = e.target.value; renderSummary(); });
-
-    document.getElementById("dp_addAdvance").addEventListener("click", () => {
-      advances.push({ date: dateKey(), amount: 0, currency: "VND", note: "" });
-      renderAdvancesTable();
-      renderSummary();
-    });
-
-    document.getElementById("dp_rep").addEventListener("change", (e) => { drillTeamRep = e.target.value.trim(); });
-
-    document.getElementById("dp_exportPdf").addEventListener("click", exportDrillTeamPaymentPdf);
-
-    function renderMethodBody() {
-      const el = document.getElementById("dp_methodBody");
-      if (method === "contract") {
-        el.innerHTML = `
-          <div class="field-row">
-            <div class="field"><label data-i18n="soilRate"></label><input type="number" min="0" id="dp_soilRate" value="${soilRate || ""}" /></div>
-            <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_soilCurrency"><option value="VND" ${soilCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${soilCurrency === "USD" ? "selected" : ""}>USD</option></select></div>
-          </div>
-          <div class="field-row">
-            <div class="field"><label data-i18n="rockRate"></label><input type="number" min="0" id="dp_rockRate" value="${rockRate || ""}" /></div>
-            <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_rockCurrency"><option value="VND" ${rockCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${rockCurrency === "USD" ? "selected" : ""}>USD</option></select></div>
-          </div>
-        `;
-        applyI18n(el);
-        document.getElementById("dp_soilRate").addEventListener("change", (e) => { soilRate = Number(e.target.value) || 0; renderSummary(); });
-        document.getElementById("dp_soilCurrency").addEventListener("change", (e) => { soilCurrency = e.target.value; renderSummary(); });
-        document.getElementById("dp_rockRate").addEventListener("change", (e) => { rockRate = Number(e.target.value) || 0; renderSummary(); });
-        document.getElementById("dp_rockCurrency").addEventListener("change", (e) => { rockCurrency = e.target.value; renderSummary(); });
-      } else {
-        el.innerHTML = `
-          <div class="field-row">
-            <div class="field"><label data-i18n="startDate"></label><input type="date" id="dp_startDate" value="${startDate}" /></div>
-            <div class="field"><label data-i18n="endDate"></label><input type="date" id="dp_endDate" value="${endDate}" /></div>
-          </div>
-          <div class="field-row">
-            <div class="field"><label data-i18n="workerRate"></label><input type="number" min="0" id="dp_workerRate" value="${workerRate || ""}" /></div>
-            <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_workerCurrency"><option value="VND" ${workerCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${workerCurrency === "USD" ? "selected" : ""}>USD</option></select></div>
-            <div class="field" style="max-width:110px;"><label data-i18n="workerCount"></label><input type="number" min="0" step="1" id="dp_workerCount" value="${workerCount}" /></div>
-          </div>
-          <div class="field-row">
-            <div class="field"><label data-i18n="laborRate"></label><input type="number" min="0" id="dp_laborRate" value="${laborRate || ""}" /></div>
-            <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_laborCurrency"><option value="VND" ${laborCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${laborCurrency === "USD" ? "selected" : ""}>USD</option></select></div>
-            <div class="field" style="max-width:110px;"><label data-i18n="laborCount"></label><input type="number" min="0" step="1" id="dp_laborCount" value="${laborCount}" /></div>
-          </div>
-          <div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div>
-          <div class="table-scroll"><table class="simple-table dtp-table" id="dp_dayTable"></table></div>
-        `;
-        applyI18n(el);
-        const rebuildDays = () => { renderDayTable(); renderSummary(); };
-        document.getElementById("dp_startDate").addEventListener("change", (e) => { startDate = e.target.value; rebuildDays(); });
-        document.getElementById("dp_endDate").addEventListener("change", (e) => { endDate = e.target.value; rebuildDays(); });
-        document.getElementById("dp_workerRate").addEventListener("change", (e) => { workerRate = Number(e.target.value) || 0; rebuildDays(); });
-        document.getElementById("dp_workerCurrency").addEventListener("change", (e) => { workerCurrency = e.target.value; renderSummary(); });
-        document.getElementById("dp_workerCount").addEventListener("change", (e) => { workerCount = Math.max(0, Math.round(Number(e.target.value) || 0)); rebuildDays(); });
-        document.getElementById("dp_laborRate").addEventListener("change", (e) => { laborRate = Number(e.target.value) || 0; rebuildDays(); });
-        document.getElementById("dp_laborCurrency").addEventListener("change", (e) => { laborCurrency = e.target.value; renderSummary(); });
-        document.getElementById("dp_laborCount").addEventListener("change", (e) => { laborCount = Math.max(0, Math.round(Number(e.target.value) || 0)); rebuildDays(); });
-        renderDayTable();
-      }
-    }
-
-    function renderDayTable() {
-      const el = document.getElementById("dp_dayTable");
-      if (!el) return;
-      const days = dayList();
-      if (!days.length) {
-        el.innerHTML = `<tbody><tr><td style="text-align:center;color:var(--text-dim);padding:14px;">${t("selectDateRangeFirst")}</td></tr></tbody>`;
-        return;
-      }
-      el.innerHTML = `
-        <thead><tr>
-          <th data-i18n="dateCol"></th><th data-i18n="workerCount"></th><th data-i18n="workerRate"></th>
-          <th data-i18n="laborCount"></th><th data-i18n="laborRate"></th><th data-i18n="dayTotal"></th>
-        </tr></thead>
-        <tbody>
-          ${days.map((d) => {
-            const dayTotal = d.workerCount * d.workerRate + d.laborCount * d.laborRate;
-            return `<tr data-day="${d.dKey}">
-              <td>${d.dKey.split("-").reverse().join("/")}</td>
-              <td><input type="number" min="0" step="1" class="dp-day-workerCount" value="${d.workerCount}" style="width:60px;" /></td>
-              <td><input type="number" min="0" class="dp-day-workerRate" value="${d.workerRate}" style="width:90px;" /></td>
-              <td><input type="number" min="0" step="1" class="dp-day-laborCount" value="${d.laborCount}" style="width:60px;" /></td>
-              <td><input type="number" min="0" class="dp-day-laborRate" value="${d.laborRate}" style="width:90px;" /></td>
-              <td class="num dp-day-total">${dayTotal.toLocaleString(getLang() === "vi" ? "vi-VN" : "en-US")}</td>
-            </tr>`;
-          }).join("")}
-        </tbody>
-        <tfoot><tr class="dtp-total-row"><td colspan="5">${t("total")} (${days.length} ${t("days")})</td><td class="num" id="dp_daysGrandTotal"></td></tr></tfoot>
-      `;
-      applyI18n(el);
-      function updateOverride(dKey, key, val) {
-        dailyOverrides[dKey] = { ...(dailyOverrides[dKey] || {}), [key]: val };
-      }
-      el.querySelectorAll("tr[data-day]").forEach((row) => {
-        const dKey = row.dataset.day;
-        row.querySelector(".dp-day-workerCount").addEventListener("change", (e) => { updateOverride(dKey, "workerCount", Math.max(0, Math.round(Number(e.target.value) || 0))); refreshDayRowAndTotal(row, dKey); });
-        row.querySelector(".dp-day-workerRate").addEventListener("change", (e) => { updateOverride(dKey, "workerRate", Number(e.target.value) || 0); refreshDayRowAndTotal(row, dKey); });
-        row.querySelector(".dp-day-laborCount").addEventListener("change", (e) => { updateOverride(dKey, "laborCount", Math.max(0, Math.round(Number(e.target.value) || 0))); refreshDayRowAndTotal(row, dKey); });
-        row.querySelector(".dp-day-laborRate").addEventListener("change", (e) => { updateOverride(dKey, "laborRate", Number(e.target.value) || 0); refreshDayRowAndTotal(row, dKey); });
-      });
-      updateDaysGrandTotalFooter();
-    }
-    function refreshDayRowAndTotal(row, dKey) {
-      const d = dayList().find((x) => x.dKey === dKey);
-      const dayTotal = d.workerCount * d.workerRate + d.laborCount * d.laborRate;
-      row.querySelector(".dp-day-total").textContent = dayTotal.toLocaleString(getLang() === "vi" ? "vi-VN" : "en-US");
-      updateDaysGrandTotalFooter();
-      renderSummary();
-    }
-    function updateDaysGrandTotalFooter() {
-      const footEl = document.getElementById("dp_daysGrandTotal");
-      if (!footEl) return;
-      // Chỉ hợp lệ để cộng chung khi cùng 1 loại tiền tệ cho cả thợ khoan & công nhân.
-      if (workerCurrency === laborCurrency) {
-        const sum = dayList().reduce((s, d) => s + d.workerCount * d.workerRate + d.laborCount * d.laborRate, 0);
-        footEl.textContent = formatMoney(sum, workerCurrency);
-      } else {
-        footEl.textContent = "—";
-      }
-    }
-
-    function renderAdvancesTable() {
-      const el = document.getElementById("dp_advancesTable");
-      if (!advances.length) { el.innerHTML = `<div class="empty-state">${t("noAdvances")}</div>`; return; }
-      el.innerHTML = `<div class="table-scroll"><table class="simple-table">
-        <thead><tr><th data-i18n="advanceDate"></th><th data-i18n="advanceAmount"></th><th data-i18n="currency"></th><th data-i18n="noteCol"></th><th></th></tr></thead>
-        <tbody>
-          ${advances.map((a, i) => `<tr data-idx="${i}">
-            <td><input type="date" class="dp-adv-date" value="${a.date}" /></td>
-            <td><input type="number" min="0" class="dp-adv-amount" value="${a.amount || ""}" style="width:100px;" /></td>
-            <td><select class="dp-adv-currency"><option value="VND" ${a.currency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${a.currency === "USD" ? "selected" : ""}>USD</option></select></td>
-            <td><input type="text" class="dp-adv-note" value="${escapeAttr(a.note)}" /></td>
-            <td><button type="button" class="btn btn-ghost btn-sm dp-adv-remove">✕</button></td>
-          </tr>`).join("")}
-        </tbody>
-      </table></div>`;
-      applyI18n(el);
-      el.querySelectorAll("tr[data-idx]").forEach((row) => {
-        const idx = +row.dataset.idx;
-        row.querySelector(".dp-adv-date").addEventListener("change", (e) => { advances[idx].date = e.target.value; });
-        row.querySelector(".dp-adv-amount").addEventListener("change", (e) => { advances[idx].amount = Number(e.target.value) || 0; renderSummary(); });
-        row.querySelector(".dp-adv-currency").addEventListener("change", (e) => { advances[idx].currency = e.target.value; renderSummary(); });
-        row.querySelector(".dp-adv-note").addEventListener("change", (e) => { advances[idx].note = e.target.value; });
-        row.querySelector(".dp-adv-remove").addEventListener("click", () => { advances.splice(idx, 1); renderAdvancesTable(); renderSummary(); });
-      });
-    }
-
-    function renderSummary() {
-      const el = document.getElementById("dp_summary");
-      if (!el) return;
-      const totals = computeTotals();
-      el.innerHTML = dtpFormatTotals(totals).map((line) => `<div class="dtp-grand-total">${line}</div>`).join("");
-    }
-
-    async function loadProject(pid) {
-      cleanupProjectWatchers();
-      currentProject = await getProject(pid);
-      selectedTeam = "";
-      const unsub = watchBoreholes(pid, (data) => { boreholes = data; fillTeamSelect(); render(); });
-      currentProjectUnsubs.push(unsub);
-    }
-
-    async function exportDrillTeamPaymentPdf() {
-      const btn = document.getElementById("dp_exportPdf");
-      const orig = btn.textContent;
-      btn.disabled = true; btn.textContent = "…";
-      try {
-        const totals = computeTotals();
-        const payload = {
-          method, team: selectedTeam, drillTeamRep,
-          boreholeIds: matchedBoreholes().map((b) => b.id),
-          soilRate, soilCurrency, rockRate, rockCurrency,
-          startDate, endDate, workerRate, workerCurrency, laborRate, laborCurrency, workerCount, laborCount, dailyOverrides,
-          allowanceAmount, allowanceCurrency,
-          advances,
-        };
-        showSaveIndicator(true);
-        await saveDrillTeamPayment(currentProject.id, payload, CURRENT_USER);
-        showSaveIndicator();
-
-        const html = buildDrillTeamPaymentPdfHTML({
-          project: currentProject, method, team: selectedTeam, drillTeamRep,
-          boreholes: matchedBoreholes(), days: method === "daily" ? dayList() : [],
-          soilRate, soilCurrency, rockRate, rockCurrency,
-          workerCurrency, laborCurrency, startDate, endDate,
-          allowanceAmount, allowanceCurrency, advances, totals,
-          currentUser: CURRENT_USER, lang: getLang(),
-        });
-        const holder = document.createElement("div");
-        holder.style.position = "fixed"; holder.style.top = "0"; holder.style.left = "-99999px";
-        holder.innerHTML = html;
-        document.body.appendChild(holder);
-        const name = slugify(currentProject?.name);
-        await exportReportToPdf("drillPayPrintArea", `${name}_khoiluong_doikhoan_${dateKey()}.pdf`);
-        document.body.removeChild(holder);
-      } catch (e) {
-        showSaveIndicator();
-        alert(t("equipSaveError") + "\n" + (e?.message || e));
-      } finally {
-        btn.disabled = false; btn.textContent = orig;
-      }
-    }
-
-    if (projectsCache.length) loadProject(projSelect.value);
+    applyI18n(el);
   }
 
-  render();
+  function renderMethodBody() {
+    const el = document.getElementById("dp_methodBody");
+    if (method === "contract") {
+      el.innerHTML = `
+        <div class="field-row">
+          <div class="field"><label data-i18n="soilRate"></label><input type="number" min="0" id="dp_soilRate" value="${soilRate || ""}" /></div>
+          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_soilCurrency"><option value="VND" ${soilCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${soilCurrency === "USD" ? "selected" : ""}>USD</option></select></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label data-i18n="rockRate"></label><input type="number" min="0" id="dp_rockRate" value="${rockRate || ""}" /></div>
+          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_rockCurrency"><option value="VND" ${rockCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${rockCurrency === "USD" ? "selected" : ""}>USD</option></select></div>
+        </div>
+      `;
+      applyI18n(el);
+      document.getElementById("dp_soilRate").addEventListener("change", (e) => { soilRate = Number(e.target.value) || 0; renderSummary(); });
+      document.getElementById("dp_soilCurrency").addEventListener("change", (e) => { soilCurrency = e.target.value; renderSummary(); });
+      document.getElementById("dp_rockRate").addEventListener("change", (e) => { rockRate = Number(e.target.value) || 0; renderSummary(); });
+      document.getElementById("dp_rockCurrency").addEventListener("change", (e) => { rockCurrency = e.target.value; renderSummary(); });
+    } else {
+      el.innerHTML = `
+        <div class="field-row">
+          <div class="field"><label data-i18n="startDate"></label><input type="date" id="dp_startDate" value="${startDate}" /></div>
+          <div class="field"><label data-i18n="endDate"></label><input type="date" id="dp_endDate" value="${endDate}" /></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label data-i18n="workerRate"></label><input type="number" min="0" id="dp_workerRate" value="${workerRate || ""}" /></div>
+          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_workerCurrency"><option value="VND" ${workerCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${workerCurrency === "USD" ? "selected" : ""}>USD</option></select></div>
+          <div class="field" style="max-width:110px;"><label data-i18n="workerCount"></label><input type="number" min="0" step="1" id="dp_workerCount" value="${workerCount}" /></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label data-i18n="laborRate"></label><input type="number" min="0" id="dp_laborRate" value="${laborRate || ""}" /></div>
+          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_laborCurrency"><option value="VND" ${laborCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${laborCurrency === "USD" ? "selected" : ""}>USD</option></select></div>
+          <div class="field" style="max-width:110px;"><label data-i18n="laborCount"></label><input type="number" min="0" step="1" id="dp_laborCount" value="${laborCount}" /></div>
+        </div>
+        <div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div>
+        <div class="table-scroll"><table class="simple-table dtp-table" id="dp_dayTable"></table></div>
+      `;
+      applyI18n(el);
+      const rebuildDays = () => { renderDayTable(); renderSummary(); };
+      document.getElementById("dp_startDate").addEventListener("change", (e) => { startDate = e.target.value; rebuildDays(); });
+      document.getElementById("dp_endDate").addEventListener("change", (e) => { endDate = e.target.value; rebuildDays(); });
+      document.getElementById("dp_workerRate").addEventListener("change", (e) => { workerRate = Number(e.target.value) || 0; rebuildDays(); });
+      document.getElementById("dp_workerCurrency").addEventListener("change", (e) => { workerCurrency = e.target.value; renderSummary(); });
+      document.getElementById("dp_workerCount").addEventListener("change", (e) => { workerCount = Math.max(0, Math.round(Number(e.target.value) || 0)); rebuildDays(); });
+      document.getElementById("dp_laborRate").addEventListener("change", (e) => { laborRate = Number(e.target.value) || 0; rebuildDays(); });
+      document.getElementById("dp_laborCurrency").addEventListener("change", (e) => { laborCurrency = e.target.value; renderSummary(); });
+      document.getElementById("dp_laborCount").addEventListener("change", (e) => { laborCount = Math.max(0, Math.round(Number(e.target.value) || 0)); rebuildDays(); });
+      renderDayTable();
+    }
+  }
+
+  function renderDayTable() {
+    const el = document.getElementById("dp_dayTable");
+    if (!el) return;
+    const days = dayList();
+    if (!days.length) {
+      el.innerHTML = `<tbody><tr><td style="text-align:center;color:var(--text-dim);padding:14px;">${t("selectDateRangeFirst")}</td></tr></tbody>`;
+      return;
+    }
+    el.innerHTML = `
+      <thead><tr>
+        <th data-i18n="dateCol"></th><th data-i18n="workerCount"></th><th data-i18n="workerRate"></th>
+        <th data-i18n="laborCount"></th><th data-i18n="laborRate"></th><th data-i18n="dayTotal"></th>
+      </tr></thead>
+      <tbody>
+        ${days.map((d) => {
+          const dayTotal = d.workerCount * d.workerRate + d.laborCount * d.laborRate;
+          return `<tr data-day="${d.dKey}">
+            <td>${d.dKey.split("-").reverse().join("/")}</td>
+            <td><input type="number" min="0" step="1" class="dp-day-workerCount" value="${d.workerCount}" style="width:60px;" /></td>
+            <td><input type="number" min="0" class="dp-day-workerRate" value="${d.workerRate}" style="width:90px;" /></td>
+            <td><input type="number" min="0" step="1" class="dp-day-laborCount" value="${d.laborCount}" style="width:60px;" /></td>
+            <td><input type="number" min="0" class="dp-day-laborRate" value="${d.laborRate}" style="width:90px;" /></td>
+            <td class="num dp-day-total">${dayTotal.toLocaleString(getLang() === "vi" ? "vi-VN" : "en-US")}</td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+      <tfoot><tr class="dtp-total-row"><td colspan="5">${t("total")} (${days.length} ${t("days")})</td><td class="num" id="dp_daysGrandTotal"></td></tr></tfoot>
+    `;
+    applyI18n(el);
+    function updateOverride(dKey, key, val) {
+      dailyOverrides[dKey] = { ...(dailyOverrides[dKey] || {}), [key]: val };
+    }
+    el.querySelectorAll("tr[data-day]").forEach((row) => {
+      const dKey = row.dataset.day;
+      row.querySelector(".dp-day-workerCount").addEventListener("change", (e) => { updateOverride(dKey, "workerCount", Math.max(0, Math.round(Number(e.target.value) || 0))); refreshDayRowAndTotal(row, dKey); });
+      row.querySelector(".dp-day-workerRate").addEventListener("change", (e) => { updateOverride(dKey, "workerRate", Number(e.target.value) || 0); refreshDayRowAndTotal(row, dKey); });
+      row.querySelector(".dp-day-laborCount").addEventListener("change", (e) => { updateOverride(dKey, "laborCount", Math.max(0, Math.round(Number(e.target.value) || 0))); refreshDayRowAndTotal(row, dKey); });
+      row.querySelector(".dp-day-laborRate").addEventListener("change", (e) => { updateOverride(dKey, "laborRate", Number(e.target.value) || 0); refreshDayRowAndTotal(row, dKey); });
+    });
+    updateDaysGrandTotalFooter();
+  }
+  function refreshDayRowAndTotal(row, dKey) {
+    const d = dayList().find((x) => x.dKey === dKey);
+    const dayTotal = d.workerCount * d.workerRate + d.laborCount * d.laborRate;
+    row.querySelector(".dp-day-total").textContent = dayTotal.toLocaleString(getLang() === "vi" ? "vi-VN" : "en-US");
+    updateDaysGrandTotalFooter();
+    renderSummary();
+  }
+  function updateDaysGrandTotalFooter() {
+    const footEl = document.getElementById("dp_daysGrandTotal");
+    if (!footEl) return;
+    if (workerCurrency === laborCurrency) {
+      const sum = dayList().reduce((s, d) => s + d.workerCount * d.workerRate + d.laborCount * d.laborRate, 0);
+      footEl.textContent = formatMoney(sum, workerCurrency);
+    } else {
+      footEl.textContent = "—";
+    }
+  }
+
+  function renderAdvancesTable() {
+    const el = document.getElementById("dp_advancesTable");
+    if (!advances.length) { el.innerHTML = `<div class="empty-state">${t("noAdvances")}</div>`; return; }
+    el.innerHTML = `<div class="table-scroll"><table class="simple-table">
+      <thead><tr><th data-i18n="advanceDate"></th><th data-i18n="advanceAmount"></th><th data-i18n="currency"></th><th data-i18n="noteCol"></th><th></th></tr></thead>
+      <tbody>
+        ${advances.map((a, i) => `<tr data-idx="${i}">
+          <td><input type="date" class="dp-adv-date" value="${a.date}" /></td>
+          <td><input type="number" min="0" class="dp-adv-amount" value="${a.amount || ""}" style="width:100px;" /></td>
+          <td><select class="dp-adv-currency"><option value="VND" ${a.currency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${a.currency === "USD" ? "selected" : ""}>USD</option></select></td>
+          <td><input type="text" class="dp-adv-note" value="${escapeAttr(a.note)}" /></td>
+          <td><button type="button" class="btn btn-ghost btn-sm dp-adv-remove">✕</button></td>
+        </tr>`).join("")}
+      </tbody>
+    </table></div>`;
+    applyI18n(el);
+    el.querySelectorAll("tr[data-idx]").forEach((row) => {
+      const idx = +row.dataset.idx;
+      row.querySelector(".dp-adv-date").addEventListener("change", (e) => { advances[idx].date = e.target.value; });
+      row.querySelector(".dp-adv-amount").addEventListener("change", (e) => { advances[idx].amount = Number(e.target.value) || 0; renderSummary(); });
+      row.querySelector(".dp-adv-currency").addEventListener("change", (e) => { advances[idx].currency = e.target.value; renderSummary(); });
+      row.querySelector(".dp-adv-note").addEventListener("change", (e) => { advances[idx].note = e.target.value; });
+      row.querySelector(".dp-adv-remove").addEventListener("click", () => { advances.splice(idx, 1); renderAdvancesTable(); renderSummary(); });
+    });
+  }
+
+  function renderSummary() {
+    const el = document.getElementById("dp_summary");
+    if (!el) return;
+    const totals = computeTotals();
+    el.innerHTML = dtpFormatTotals(totals).map((line) => `<div class="dtp-grand-total">${line}</div>`).join("");
+  }
+
+  // Chỉ cập nhật PHẦN DỮ LIỆU ĐỘNG (bảng hố khoan + tổng tiền) khi Firestore
+  // báo có thay đổi — KHÔNG dựng lại khung/select, KHÔNG gọi lại loadProject.
+  function renderDynamic() {
+    renderBoreholesTable();
+    renderSummary();
+  }
+
+  async function loadProject(pid) {
+    cleanupProjectWatchers();
+    currentProject = await getProject(pid);
+    selectedTeam = "";
+    teamSelect.value = "";
+    const unsub = watchBoreholes(pid, (data) => {
+      boreholes = data;
+      fillTeamSelect();
+      renderDynamic();
+    });
+    currentProjectUnsubs.push(unsub);
+  }
+
+  async function exportDrillTeamPaymentPdf() {
+    const btn = document.getElementById("dp_exportPdf");
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = "…";
+    try {
+      const totals = computeTotals();
+      const payload = {
+        method, team: selectedTeam, drillTeamRep,
+        boreholeIds: matchedBoreholes().map((b) => b.id),
+        soilRate, soilCurrency, rockRate, rockCurrency,
+        startDate, endDate, workerRate, workerCurrency, laborRate, laborCurrency, workerCount, laborCount, dailyOverrides,
+        allowanceAmount, allowanceCurrency,
+        advances,
+      };
+      showSaveIndicator(true);
+      await saveDrillTeamPayment(currentProject.id, payload, CURRENT_USER);
+      showSaveIndicator();
+
+      const html = buildDrillTeamPaymentPdfHTML({
+        project: currentProject, method, team: selectedTeam, drillTeamRep,
+        boreholes: matchedBoreholes(), days: method === "daily" ? dayList() : [],
+        soilRate, soilCurrency, rockRate, rockCurrency,
+        workerCurrency, laborCurrency, startDate, endDate,
+        allowanceAmount, allowanceCurrency, advances, totals,
+        currentUser: CURRENT_USER, lang: getLang(),
+      });
+      const holder = document.createElement("div");
+      holder.style.position = "fixed"; holder.style.top = "0"; holder.style.left = "-99999px";
+      holder.innerHTML = html;
+      document.body.appendChild(holder);
+      const name = slugify(currentProject?.name);
+      await exportReportToPdf("drillPayPrintArea", `${name}_khoiluong_doikhoan_${dateKey()}.pdf`);
+      document.body.removeChild(holder);
+    } catch (e) {
+      showSaveIndicator();
+      alert(t("equipSaveError") + "\n" + (e?.message || e));
+    } finally {
+      btn.disabled = false; btn.textContent = orig;
+    }
+  }
+
+  // Khởi tạo lần đầu
+  renderMethodBody();
+  renderAdvancesTable();
+  renderSummary();
+  if (projectsCache.length) loadProject(projSelect.value);
 }
 
 // ============================================================
@@ -2447,7 +2476,7 @@ function renderActivityView() {
       <div class="field"><select id="al_project"></select></div>
       <div class="field"><select id="al_user"></select></div>
     </div>
-    <div class="card"><div class="table-wrap"><table id="al_table" class="table-divided"><thead><tr><th>${t("timeCol")}</th><th data-i18n="user"></th><th data-i18n="activity"></th></tr></thead><tbody id="al_body"></tbody></table></div></div>`;
+    <div class="card"><div class="table-wrap"><table id="al_table" class="table-divided"><thead><tr><th>${t("timeCol")}</th><th data-i18n="projectCol"></th><th data-i18n="user"></th><th data-i18n="activity"></th></tr></thead><tbody id="al_body"></tbody></table></div></div>`;
   bindTopbar();
   const sel = document.getElementById("al_project");
   const userSel = document.getElementById("al_user");
@@ -2455,7 +2484,7 @@ function renderActivityView() {
   let currentActivities = [];
 
   function fill() {
-    sel.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+    sel.innerHTML = `<option value="">${t("allProjects")}</option>` + projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
   }
   function renderRows() {
     const body = document.getElementById("al_body");
@@ -2467,13 +2496,14 @@ function renderActivityView() {
       filtered = filtered.filter((a) =>
         (a.userName || "").toLowerCase().includes(q) ||
         (a.itemLabel || "").toLowerCase().includes(q) ||
+        (a._projectName || "").toLowerCase().includes(q) ||
         t("action_" + (a.action || "updated")).toLowerCase().includes(q)
       );
     }
-    if (!filtered.length) { body.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-dim);">—</td></tr>`; return; }
+    if (!filtered.length) { body.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-dim);">—</td></tr>`; return; }
     body.innerHTML = filtered.map((a) => {
       const time = a.ts?.toDate ? a.ts.toDate().toLocaleString(getLang() === "vi" ? "vi-VN" : "en-US") : "—";
-      return `<tr><td>${time}</td><td>${escapeHtml(a.userName || "")}</td><td>${escapeHtml(a.userName || "")} ${t("action_" + (a.action || "updated"))}: ${escapeHtml(a.itemLabel || "")}</td></tr>`;
+      return `<tr><td>${time}</td><td>${escapeHtml(a._projectName || "—")}</td><td>${escapeHtml(a.userName || "")}</td><td>${escapeHtml(a.userName || "")} ${t("action_" + (a.action || "updated"))}: ${escapeHtml(a.itemLabel || "")}</td></tr>`;
     }).join("");
   }
   function fillUserFilter() {
@@ -2482,17 +2512,46 @@ function renderActivityView() {
     userSel.innerHTML = `<option value="">${t("allUsers")}</option>` + names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
     if (names.includes(prev)) userSel.value = prev;
   }
+  function projectNameOf(pid) { return projectsCache.find((p) => p.id === pid)?.name || ""; }
+
+  // Chọn "Tất cả dự án" (mặc định): gộp hoạt động từ MỌI dự án lại thành 1 danh
+  // sách chung, sắp xếp theo thời gian mới nhất — thay vì bắt buộc chọn 1 dự án
+  // mới thấy được gì.
+  function loadAll() {
+    const perProjectData = {};
+    const mergeAndRender = () => {
+      currentActivities = Object.entries(perProjectData).flatMap(([pid, acts]) =>
+        acts.map((a) => ({ ...a, _projectId: pid, _projectName: projectNameOf(pid) }))
+      );
+      currentActivities.sort((a, b) => {
+        const ta = a.ts?.toMillis ? a.ts.toMillis() : 0;
+        const tb = b.ts?.toMillis ? b.ts.toMillis() : 0;
+        return tb - ta;
+      });
+      fillUserFilter();
+      renderRows();
+    };
+    if (!projectsCache.length) { currentActivities = []; renderRows(); return; }
+    projectsCache.forEach((p) => {
+      const unsub = watchActivity(p.id, (activities) => {
+        perProjectData[p.id] = activities;
+        mergeAndRender();
+      });
+      currentProjectUnsubs.push(unsub);
+    });
+  }
   function load(pid) {
-    if (!pid) return;
+    cleanupProjectWatchers();
+    if (!pid) { loadAll(); return; }
     const unsub = watchActivity(pid, (activities) => {
-      currentActivities = activities;
+      currentActivities = activities.map((a) => ({ ...a, _projectId: pid, _projectName: projectNameOf(pid) }));
       fillUserFilter();
       renderRows();
     });
     currentProjectUnsubs.push(unsub);
   }
   searchEl.addEventListener("input", renderRows);
-  sel.addEventListener("change", () => { cleanupProjectWatchers(); currentActivities = []; load(sel.value); });
+  sel.addEventListener("change", () => load(sel.value));
   userSel.addEventListener("change", renderRows);
   if (projectsCache.length) { fill(); load(sel.value); }
   else {

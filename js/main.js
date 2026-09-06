@@ -8,15 +8,16 @@ import {
   getProjectFullData, importProjectFullData,
   watchBoreholes, addBorehole, updateBorehole, deleteBorehole, resetBoreholeDay,
   watchSurveyItems, addSurveyItem, updateSurveyItem, deleteSurveyItem, resetSurveyItemDay,
-  watchActivity, dateKey, sumDailyLog,
+  watchActivity, watchGlobalActivity, dateKey, sumDailyLog,
   watchDrillingMachines, addDrillingMachine, updateDrillingMachine, deleteDrillingMachine, saveDrillingMachineDayLog, updateDrillingMachineField,
   watchEquipmentLogs, getLatestEquipmentLog, createEquipmentCheckout, updateEquipmentCheckout, saveEquipmentCheckin, deleteEquipmentLog,
-  watchMaterials, addMaterial, updateMaterial, deleteMaterial,
-  watchDrillTeamPayments, saveDrillTeamPayment,
+  watchConsumables, addConsumableItem, updateConsumableDay, deleteConsumableItem,
+  watchMaterials, getMaterialsOnce, addMaterial, updateMaterial, deleteMaterial,
+  watchOpenDrillTeamPayment, getOpenDrillTeamPayment, saveDrillTeamPaymentProgress, finalizeDrillTeamPayment,
 } from "./store.js";
 import { applyI18n, getLang, setLang, t } from "./i18n.js";
 import { initTheme, toggleTheme, getTheme, applyTheme } from "./theme.js";
-import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, buildRepairHistoryHTML, buildEquipmentCheckoutHTML, buildEquipmentCheckinHTML, buildMaterialsPdfHTML, buildDrillTeamPaymentPdfHTML, slugify } from "./report.js";
+import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, buildRepairHistoryHTML, buildEquipmentCheckoutHTML, buildEquipmentCheckinHTML, buildMaterialsPdfHTML, buildDrillTeamPaymentPdfHTML, buildConsumablesReportHTML, slugify } from "./report.js";
 import { EQUIPMENT_CATALOG, EQUIPMENT_CATEGORIES } from "./equipment-catalog.js";
 
 initTheme();
@@ -1490,12 +1491,25 @@ function showRepeatProjectModal() {
 function renderEquipmentView() {
   let currentProject = null;
   let logs = [];
+  let section = "checkinout"; // checkinout | consumables
   let mode = "list"; // list | new | checkin
   let draftItems = []; // { itemId, spec, customName, qty }
   let editingLogId = null; // when editing an existing checkout's item list
   let checkinLog = null; // the log currently being checked in / edited
 
+  function tabsHtml() {
+    return `<div class="eq-tabs">
+      <button type="button" class="btn ${section === "checkinout" ? "btn-primary" : "btn-ghost"}" id="eq_tab_checkinout" data-i18n="tabCheckInOut"></button>
+      <button type="button" class="btn ${section === "consumables" ? "btn-primary" : "btn-ghost"}" id="eq_tab_consumables" data-i18n="tabConsumables"></button>
+    </div>`;
+  }
+  function bindTabs() {
+    document.getElementById("eq_tab_checkinout").addEventListener("click", () => { section = "checkinout"; mode = "list"; render(); });
+    document.getElementById("eq_tab_consumables").addEventListener("click", () => { section = "consumables"; render(); });
+  }
+
   function render() {
+    if (section === "consumables") { renderConsumablesMode(); return; }
     if (mode === "new") renderNewMode();
     else if (mode === "checkin") renderCheckinMode();
     else renderListMode();
@@ -1503,7 +1517,7 @@ function renderEquipmentView() {
 
   // ---------- LIST MODE ----------
   function renderListMode() {
-    mainView.innerHTML = topbarHtml("equipmentTitle") + `
+    mainView.innerHTML = topbarHtml("equipmentTitle") + tabsHtml() + `
       <div class="report-toolbar">
         <div class="field"><label data-i18n="selectProject"></label><select id="eq_project"></select></div>
         ${canEdit() ? `<button class="btn btn-primary" id="eq_new" data-i18n="newCheckout"></button>
@@ -1512,6 +1526,7 @@ function renderEquipmentView() {
       <div id="eq_list"></div>
     `;
     bindTopbar();
+    bindTabs();
     const projSelect = document.getElementById("eq_project");
     projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
     if (currentProject) projSelect.value = currentProject.id;
@@ -1835,6 +1850,139 @@ function renderEquipmentView() {
     });
   }
 
+  // ---------- VẬT TƯ TIÊU HAO (Consumables) MODE ----------
+  function renderConsumablesMode() {
+    let items = [];
+    let materialsOnce = [];
+
+    mainView.innerHTML = topbarHtml("equipmentTitle") + tabsHtml() + `
+      <div class="report-toolbar">
+        <div class="field"><label data-i18n="selectProject"></label><select id="cs_project"></select></div>
+        <div class="field"><label data-i18n="selectDate"></label><input type="date" id="cs_date" value="${dateKey()}" /></div>
+        <button class="btn btn-ghost" id="cs_exportPdf" data-i18n="exportConsumablesPdf"></button>
+      </div>
+      ${canEdit() ? `
+      <div class="card">
+        <h3 data-i18n="addConsumableTitle"></h3>
+        <div class="field-row">
+          <div class="field"><label data-i18n="selectMaterialOrCustom"></label><select id="cs_materialSelect"><option value="">${t("customInput")}</option></select></div>
+          <div class="field" id="cs_customWrap"><label data-i18n="customEquipmentName"></label><input id="cs_customName" /></div>
+          <div class="field" style="max-width:120px;"><label data-i18n="unitLabel"></label><input id="cs_unit" placeholder="lít, bao, cái..." /></div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="cs_add" data-i18n="addItem"></button>
+      </div>` : ""}
+      <div id="cs_list"></div>
+    `;
+    bindTopbar();
+    bindTabs();
+
+    const projSelect = document.getElementById("cs_project");
+    projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+    if (currentProject) projSelect.value = currentProject.id;
+    projSelect.addEventListener("change", () => loadProject(projSelect.value));
+
+    const dateInput = document.getElementById("cs_date");
+    dateInput.addEventListener("change", renderList);
+
+    const materialSelect = document.getElementById("cs_materialSelect");
+    const customWrap = document.getElementById("cs_customWrap");
+    if (materialSelect) {
+      getMaterialsOnce().then((mats) => {
+        materialsOnce = mats;
+        materialSelect.innerHTML = `<option value="">${t("customInput")}</option>` + mats.map((m) => `<option value="${escapeAttr(m.name)}">${escapeHtml(m.name)}</option>`).join("");
+      });
+      materialSelect.addEventListener("change", () => {
+        customWrap.classList.toggle("hidden", !!materialSelect.value);
+      });
+    }
+
+    const addBtn = document.getElementById("cs_add");
+    if (addBtn) addBtn.addEventListener("click", async () => {
+      const selected = materialSelect.value;
+      const customName = document.getElementById("cs_customName").value.trim();
+      const name = selected || customName;
+      if (!name) return;
+      const unit = document.getElementById("cs_unit").value.trim();
+      showSaveIndicator(true);
+      await addConsumableItem(currentProject.id, { name, unit }, CURRENT_USER);
+      showSaveIndicator();
+      document.getElementById("cs_customName").value = "";
+      document.getElementById("cs_unit").value = "";
+      if (materialSelect) materialSelect.value = "";
+      customWrap.classList.remove("hidden");
+    });
+
+    function renderList() {
+      const el = document.getElementById("cs_list");
+      if (!el) return;
+      const dKey = dateInput.value || dateKey();
+      if (!items.length) { el.innerHTML = `<div class="empty-state">${t("noConsumables")}</div>`; return; }
+      el.innerHTML = `<div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div><div class="table-scroll"><table class="simple-table">
+        <thead><tr><th data-i18n="materialName"></th><th data-i18n="unitLabel"></th><th data-i18n="quantity"></th>${canEdit() ? "<th></th>" : ""}</tr></thead>
+        <tbody>
+          ${items.map((it) => {
+            const qty = (it.dailyLog || {})[dKey];
+            return `<tr data-id="${it.id}">
+              <td>${escapeHtml(it.name)}</td>
+              <td>${escapeHtml(it.unit || "—")}</td>
+              <td><input type="number" min="0" class="cs-qty" value="${qty ?? ""}" ${canEdit() ? "" : "disabled"} style="width:90px;" /></td>
+              ${canEdit() ? `<td><button type="button" class="btn btn-ghost btn-sm cs-remove">✕</button></td>` : ""}
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table></div>`;
+      applyI18n(el);
+      el.querySelectorAll("tr[data-id]").forEach((row) => {
+        const id = row.dataset.id;
+        const item = items.find((x) => x.id === id);
+        const qtyInput = row.querySelector(".cs-qty");
+        qtyInput.addEventListener("change", async () => {
+          const val = Number(qtyInput.value) || 0;
+          showSaveIndicator(true);
+          await updateConsumableDay(currentProject.id, id, dKey, val, CURRENT_USER, item.name);
+          showSaveIndicator();
+        });
+        const rmBtn = row.querySelector(".cs-remove");
+        if (rmBtn) rmBtn.addEventListener("click", async () => {
+          if (await showConfirmModal(t("deleteConsumableConfirm"))) {
+            showSaveIndicator(true);
+            await deleteConsumableItem(currentProject.id, id, CURRENT_USER, item.name);
+            showSaveIndicator();
+          }
+        });
+      });
+    }
+
+    function loadProject(pid) {
+      cleanupProjectWatchers();
+      (async () => {
+        currentProject = await getProject(pid);
+        const unsub = watchConsumables(pid, (data) => { items = data; renderList(); });
+        currentProjectUnsubs.push(unsub);
+      })();
+    }
+
+    document.getElementById("cs_exportPdf").addEventListener("click", async (e) => {
+      const btn = e.target;
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = "…";
+      try {
+        const html = buildConsumablesReportHTML({ project: currentProject, items, currentUser: CURRENT_USER, lang: getLang() });
+        const holder = document.createElement("div");
+        holder.style.position = "fixed"; holder.style.top = "0"; holder.style.left = "-99999px";
+        holder.innerHTML = html;
+        document.body.appendChild(holder);
+        const name = slugify(currentProject?.name);
+        await exportReportToPdf("consumablesPrintArea", `${name}_vattutieuhao_${dateKey()}.pdf`);
+        document.body.removeChild(holder);
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    });
+
+    if (projectsCache.length) loadProject(projSelect.value);
+  }
+
   render();
 }
 
@@ -1873,6 +2021,7 @@ function dtpFormatTotals(totals) {
 
 function renderDrillTeamPaymentView() {
   let currentProject = null;
+  let currentPaymentId = null; // id phiếu "đang mở" hiện tại (null = chưa lưu lần nào)
   let boreholes = [];
   let selectedTeam = "";
   let method = "contract"; // "contract" | "daily"
@@ -1979,7 +2128,11 @@ function renderDrillTeamPaymentView() {
     <div class="card" id="dp_summaryCard">
       <h3 data-i18n="grandTotalTitle"></h3>
       <div id="dp_summary" class="dtp-summary"></div>
-      <button class="btn btn-primary" id="dp_exportPdf" data-i18n="saveAndExportPdf"></button>
+      <div id="dp_status" class="dtp-status"></div>
+      <div class="equip-actions">
+        <button class="btn btn-ghost" id="dp_save" data-i18n="saveProgress"></button>
+        <button class="btn btn-primary" id="dp_exportPdf" data-i18n="saveAndExportPdf"></button>
+      </div>
     </div>
   `;
   bindTopbar();
@@ -1993,9 +2146,14 @@ function renderDrillTeamPaymentView() {
   projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
   projSelect.addEventListener("change", () => loadProject(projSelect.value));
 
-  teamSelect.addEventListener("change", () => {
+  teamSelect.addEventListener("change", async () => {
     selectedTeam = teamSelect.value;
-    if (!drillTeamRep) { drillTeamRep = selectedTeam; repInput.value = drillTeamRep; }
+    currentPaymentId = null;
+    if (!selectedTeam) { applyLoadedPayment(null); renderDynamic(); return; }
+    showSaveIndicator(true);
+    const existing = await getOpenDrillTeamPayment(currentProject.id, selectedTeam);
+    showSaveIndicator();
+    applyLoadedPayment(existing);
     renderDynamic();
   });
 
@@ -2016,6 +2174,61 @@ function renderDrillTeamPaymentView() {
   });
 
   repInput.addEventListener("change", (e) => { drillTeamRep = e.target.value.trim(); });
+
+  function buildPayload() {
+    return {
+      method, team: selectedTeam, drillTeamRep,
+      boreholeIds: matchedBoreholes().map((b) => b.id),
+      soilRate, soilCurrency, rockRate, rockCurrency,
+      startDate, endDate, workerRate, workerCurrency, laborRate, laborCurrency, workerCount, laborCount, dailyOverrides,
+      allowanceAmount, allowanceCurrency,
+      advances,
+    };
+  }
+  function updateStatusLine() {
+    const el = document.getElementById("dp_status");
+    if (!el) return;
+    el.textContent = currentPaymentId ? t("progressSavedNote") : t("notSavedYetNote");
+  }
+  function applyLoadedPayment(payment) {
+    currentPaymentId = payment ? payment.id : null;
+    method = payment?.method || "contract";
+    soilRate = payment?.soilRate || 0; soilCurrency = payment?.soilCurrency || "VND";
+    rockRate = payment?.rockRate || 0; rockCurrency = payment?.rockCurrency || "VND";
+    startDate = payment?.startDate || ""; endDate = payment?.endDate || "";
+    workerRate = payment?.workerRate || 0; workerCurrency = payment?.workerCurrency || "VND";
+    laborRate = payment?.laborRate || 0; laborCurrency = payment?.laborCurrency || "VND";
+    workerCount = payment?.workerCount ?? 1; laborCount = payment?.laborCount ?? 1;
+    dailyOverrides = payment?.dailyOverrides ? { ...payment.dailyOverrides } : {};
+    allowanceAmount = payment?.allowanceAmount || 0; allowanceCurrency = payment?.allowanceCurrency || "VND";
+    advances = payment?.advances ? payment.advances.map((a) => ({ ...a })) : [];
+    drillTeamRep = payment?.drillTeamRep || selectedTeam;
+
+    updateMethodButtons();
+    renderMethodBody();
+    document.getElementById("dp_allowance").value = allowanceAmount || "";
+    document.getElementById("dp_allowanceCurrency").value = allowanceCurrency;
+    renderAdvancesTable();
+    repInput.value = drillTeamRep;
+    updateStatusLine();
+  }
+
+  document.getElementById("dp_save").addEventListener("click", async () => {
+    if (!currentProject || !selectedTeam) { alert(t("selectTeamFirst")); return; }
+    const btn = document.getElementById("dp_save");
+    btn.disabled = true;
+    try {
+      showSaveIndicator(true);
+      currentPaymentId = await saveDrillTeamPaymentProgress(currentProject.id, currentPaymentId, buildPayload(), CURRENT_USER);
+      showSaveIndicator();
+      updateStatusLine();
+    } catch (e) {
+      showSaveIndicator();
+      alert(t("equipSaveError") + "\n" + (e?.message || e));
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   document.getElementById("dp_exportPdf").addEventListener("click", exportDrillTeamPaymentPdf);
 
@@ -2196,6 +2409,8 @@ function renderDrillTeamPaymentView() {
     currentProject = await getProject(pid);
     selectedTeam = "";
     teamSelect.value = "";
+    currentPaymentId = null;
+    applyLoadedPayment(null);
     const unsub = watchBoreholes(pid, (data) => {
       boreholes = data;
       fillTeamSelect();
@@ -2207,20 +2422,14 @@ function renderDrillTeamPaymentView() {
   async function exportDrillTeamPaymentPdf() {
     const btn = document.getElementById("dp_exportPdf");
     const orig = btn.textContent;
+    if (!currentProject || !selectedTeam) { alert(t("selectTeamFirst")); return; }
     btn.disabled = true; btn.textContent = "…";
     try {
       const totals = computeTotals();
-      const payload = {
-        method, team: selectedTeam, drillTeamRep,
-        boreholeIds: matchedBoreholes().map((b) => b.id),
-        soilRate, soilCurrency, rockRate, rockCurrency,
-        startDate, endDate, workerRate, workerCurrency, laborRate, laborCurrency, workerCount, laborCount, dailyOverrides,
-        allowanceAmount, allowanceCurrency,
-        advances,
-      };
       showSaveIndicator(true);
-      await saveDrillTeamPayment(currentProject.id, payload, CURRENT_USER);
+      currentPaymentId = await finalizeDrillTeamPayment(currentProject.id, currentPaymentId, buildPayload(), CURRENT_USER);
       showSaveIndicator();
+      updateStatusLine();
 
       const html = buildDrillTeamPaymentPdfHTML({
         project: currentProject, method, team: selectedTeam, drillTeamRep,
@@ -2452,7 +2661,7 @@ function renderMaterialsView() {
         if (delBtn) delBtn.addEventListener("click", async () => {
           if (await showConfirmModal(t("deleteMaterialConfirm"))) {
             showSaveIndicator(true);
-            await deleteMaterial(id);
+            await deleteMaterial(id, CURRENT_USER, m?.name);
             showSaveIndicator();
           }
         });
@@ -2519,10 +2728,11 @@ function renderActivityView() {
   // mới thấy được gì.
   function loadAll() {
     const perProjectData = {};
+    let globalData = [];
     const mergeAndRender = () => {
       currentActivities = Object.entries(perProjectData).flatMap(([pid, acts]) =>
         acts.map((a) => ({ ...a, _projectId: pid, _projectName: projectNameOf(pid) }))
-      );
+      ).concat(globalData.map((a) => ({ ...a, _projectId: null, _projectName: t("systemWide") })));
       currentActivities.sort((a, b) => {
         const ta = a.ts?.toMillis ? a.ts.toMillis() : 0;
         const tb = b.ts?.toMillis ? b.ts.toMillis() : 0;
@@ -2531,7 +2741,9 @@ function renderActivityView() {
       fillUserFilter();
       renderRows();
     };
-    if (!projectsCache.length) { currentActivities = []; renderRows(); return; }
+    const gUnsub = watchGlobalActivity((activities) => { globalData = activities; mergeAndRender(); });
+    currentProjectUnsubs.push(gUnsub);
+    if (!projectsCache.length) { mergeAndRender(); return; }
     projectsCache.forEach((p) => {
       const unsub = watchActivity(p.id, (activities) => {
         perProjectData[p.id] = activities;

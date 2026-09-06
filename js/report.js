@@ -984,6 +984,67 @@ export function buildDrillTeamPaymentPdfHTML({
   </div>`;
 }
 
+// ============================================================
+// VẬT TƯ TIÊU HAO (Consumables) REPORT
+// ============================================================
+export function buildConsumablesReportHTML({ project, items, currentUser, lang }) {
+  const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
+  const rows = [];
+  (items || []).forEach((it) => {
+    const log = it.dailyLog || {};
+    Object.keys(log).sort().forEach((dKey) => {
+      const qty = Number(log[dKey]) || 0;
+      if (qty <= 0) return;
+      rows.push({ dKey, name: it.name, unit: it.unit, qty });
+    });
+  });
+  rows.sort((a, b) => a.dKey === b.dKey ? a.name.localeCompare(b.name) : a.dKey.localeCompare(b.dKey));
+
+  const totalsByItem = {};
+  rows.forEach((r) => {
+    const key = r.name + "|" + (r.unit || "");
+    totalsByItem[key] = (totalsByItem[key] || 0) + r.qty;
+  });
+
+  const rowsHtml = rows.map((r) => `<tr>
+      <td class="num">${r.dKey.split("-").reverse().join("/")}</td>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(r.unit || "—")}</td>
+      <td class="num">${r.qty}</td>
+    </tr>`).join("");
+
+  const totalsRows = Object.entries(totalsByItem).map(([key, total]) => {
+    const [name, unit] = key.split("|");
+    return `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(unit || "—")}</td><td class="num">${total}</td></tr>`;
+  }).join("");
+
+  return `
+  <div class="report-page" id="consumablesPrintArea">
+    ${reportHead(lang, exportedAt)}
+    <div class="report-title">${t("consumablesReportTitle")}</div>
+    <div class="report-section">
+      <table class="report-info-table report-table-closed">
+        <tr><td>${t("project")}</td><td>${escapeHtml(project?.name || "—")}</td></tr>
+      </table>
+    </div>
+    <div class="report-section">
+      <div class="section-title">${t("consumablesTotalTitle")}</div>
+      <table class="report-table-closed">
+        <thead><tr><th>${t("materialName")}</th><th>${t("unitLabel")}</th><th>${t("totalQty")}</th></tr></thead>
+        <tbody>${totalsRows || `<tr><td colspan="3" style="text-align:center;color:#888;">${t("noConsumables")}</td></tr>`}</tbody>
+      </table>
+    </div>
+    <div class="report-section">
+      <div class="section-title">${t("consumablesDailyTitle")}</div>
+      <table class="report-table-closed">
+        <thead><tr><th>${t("reportDate")}</th><th>${t("materialName")}</th><th>${t("unitLabel")}</th><th>${t("quantity")}</th></tr></thead>
+        <tbody>${rowsHtml || `<tr><td colspan="4" style="text-align:center;color:#888;">${t("noConsumables")}</td></tr>`}</tbody>
+      </table>
+    </div>
+    ${reportSignRow(currentUser)}
+  </div>`;
+}
+
 function escapeHtml(str) {
   return String(str ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

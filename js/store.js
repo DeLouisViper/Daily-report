@@ -192,6 +192,26 @@ export function watchActivity(projectId, cb, max = 100) {
   return onSnapshot(q, (snap) => cb(snap.docs.slice(0, max).map((d) => ({ id: d.id, ...d.data() }))));
 }
 
+// Một số hành động (VD: sửa Bảng giá vật tư) không gắn với dự án cụ thể nào,
+// nên được ghi vào 1 collection Nhật ký chung cấp hệ thống (top-level), để
+// trang "Nhật ký" (chế độ Tất cả dự án) có thể gộp hiển thị đầy đủ.
+export async function logActivityGlobal(user, action, itemLabel) {
+  try {
+    await addDoc(collection(db, "globalActivity"), {
+      userName: user?.name || user?.email || "—",
+      action,
+      itemLabel: itemLabel || "",
+      ts: serverTimestamp(),
+    });
+  } catch (e) {
+    console.warn("global activity log failed", e);
+  }
+}
+export function watchGlobalActivity(cb, max = 100) {
+  const q = query(collection(db, "globalActivity"), orderBy("ts", "desc"));
+  return onSnapshot(q, (snap) => cb(snap.docs.slice(0, max).map((d) => ({ id: d.id, ...d.data() }))));
+}
+
 // ---------- Drilling machines (Nhật ký máy khoan) ----------
 export function watchDrillingMachines(projectId, cb) {
   const q = query(collection(db, "projects", projectId, "drillingMachines"), orderBy("createdAt", "asc"));
@@ -288,6 +308,10 @@ export function watchMaterials(cb) {
   const q = query(collection(db, "materials"), orderBy("name"));
   return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
 }
+export async function getMaterialsOnce() {
+  const snap = await getDocs(query(collection(db, "materials"), orderBy("name")));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
 export async function addMaterial(data, user) {
   const ref = await addDoc(collection(db, "materials"), {
     ...data,
@@ -296,6 +320,7 @@ export async function addMaterial(data, user) {
     createdBy: user?.name || user?.email || "—",
     updatedBy: user?.name || user?.email || "—",
   });
+  await logActivityGlobal(user, "created", `Vật tư: ${data.name || "—"}`);
   return ref.id;
 }
 export async function updateMaterial(id, data, user) {
@@ -304,26 +329,97 @@ export async function updateMaterial(id, data, user) {
     updatedAt: serverTimestamp(),
     updatedBy: user?.name || user?.email || "—",
   });
+  await logActivityGlobal(user, "updated", `Vật tư: ${data.name || "—"}`);
 }
-export async function deleteMaterial(id) {
+export async function deleteMaterial(id, user, name) {
   await deleteDoc(doc(db, "materials", id));
+  await logActivityGlobal(user, "deleted", `Vật tư: ${name || "—"}`);
+}
+
+// ---------- Vật tư tiêu hao (Consumables) ----------
+// Theo dõi số lượng tiêu hao THEO NGÀY cho từng vật tư, riêng theo từng dự án
+// (cùng kiểu dữ liệu dailyLog như hố khoan/hạng mục khảo sát).
+export function watchConsumables(projectId, cb) {
+  const q = query(collection(db, "projects", projectId, "consumables"), orderBy("name"));
+  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+}
+export async function addConsumableItem(projectId, data, user) {
+  const ref = await addDoc(collection(db, "projects", projectId, "consumables"), {
+    ...data,
+    dailyLog: {},
+    createdAt: serverTimestamp(),
+  });
+  await logActivity(projectId, user, "created", `Vật tư tiêu hao: ${data.name || "—"}`);
+  return ref.id;
+}
+export async function updateConsumableDay(projectId, itemId, dKey, qty, user, label) {
+  await updateDoc(doc(db, "projects", projectId, "consumables", itemId), {
+    [`dailyLog.${dKey}`]: qty,
+  });
+  await logActivity(projectId, user, "updated", `${label} (${dKey})`);
+}
+export async function deleteConsumableItem(projectId, itemId, user, label) {
+  await deleteDoc(doc(db, "projects", projectId, "consumables", itemId));
+  await logActivity(projectId, user, "deleted", `Vật tư tiêu hao: ${label || "—"}`);
 }
 
 // ---------- Khối lượng đội khoan (Drill Team Payment) ----------
-// Mỗi lần lập bảng thanh toán được lưu thành 1 document để có thể tra cứu lại
-// sau này (mở rộng lịch sử thanh toán trong tương lai theo yêu cầu).
+// Mỗi đội khoan trong 1 dự án có 1 phiếu khối lượng "đang mở" (status: "open")
+// có thể lưu/cập nhật nhiều lần qua từng ngày (thêm hố khoan mới hoàn thành,
+// thêm khoản ứng...); khi lập phiếu mới xong việc thì đánh dấu "completed".
 export function watchDrillTeamPayments(projectId, cb) {
   const q = query(collection(db, "projects", projectId, "drillTeamPayments"), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
 }
-export async function saveDrillTeamPayment(projectId, data, user) {
+// Tìm phiếu "đang mở" gần nhất của 1 đội khoan trong dự án (nếu có) để nạp lại
+// dữ liệu, cho phép cập nhật tiếp thay vì phải nhập lại từ đầu.
+export function watchOpenDrillTeamPayment(projectId, team, cb) {
+  const q = query(collection(db, "projects", projectId, "drillTeamPayments"), where("status", "==", "open"));
+  return onSnapshot(q, (snap) => {
+    const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((d) => d.team === team);
+    if (!docs.length) { cb(null); return; }
+    docs.sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+    cb(docs[0]);
+  });
+}
+// Bản lấy 1 lần (không realtime) — dùng khi mở form để nạp dữ liệu, tránh việc
+// listener realtime ghi đè lên nội dung người dùng đang gõ dở.
+export async function getOpenDrillTeamPayment(projectId, team) {
+  const snap = await getDocs(query(collection(db, "projects", projectId, "drillTeamPayments"), where("status", "==", "open")));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((d) => d.team === team);
+  if (!docs.length) return null;
+  docs.sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+  return docs[0];
+}
+// Lưu tiến độ (không đánh dấu hoàn thành) — tạo phiếu mới nếu chưa có, hoặc
+// cập nhật phiếu đang mở đã có.
+export async function saveDrillTeamPaymentProgress(projectId, id, data, user) {
+  if (id) {
+    await updateDoc(doc(db, "projects", projectId, "drillTeamPayments", id), {
+      ...data,
+      status: "open",
+      updatedAt: serverTimestamp(),
+      updatedBy: user?.name || user?.email || "—",
+    });
+    await logActivity(projectId, user, "updated", `Bảng khối lượng đội khoan (${data.team || "—"})`);
+    return id;
+  }
   const ref = await addDoc(collection(db, "projects", projectId, "drillTeamPayments"), {
     ...data,
+    status: "open",
     createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
     createdBy: user?.name || user?.email || "—",
   });
   await logActivity(projectId, user, "created", `Bảng khối lượng đội khoan (${data.team || "—"})`);
   return ref.id;
+}
+// Xuất PDF = lưu lại lần cuối + đánh dấu hoàn thành.
+export async function finalizeDrillTeamPayment(projectId, id, data, user) {
+  const finalId = await saveDrillTeamPaymentProgress(projectId, id, data, user);
+  await updateDoc(doc(db, "projects", projectId, "drillTeamPayments", finalId), { status: "completed" });
+  await logActivity(projectId, user, "updated", `Hoàn thành bảng khối lượng đội khoan (${data.team || "—"})`);
+  return finalId;
 }
 
 // ---------- Helpers ----------

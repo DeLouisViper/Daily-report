@@ -178,6 +178,7 @@ label { font-size: 12.5px; color: var(--text-dim); display: block; margin-bottom
 .dtp-table tfoot td, .dtp-total-row td { font-weight: 800; background: var(--bg-elev-2); }
 .dtp-summary { margin-bottom: 14px; }
 .dtp-grand-total { font-size: 20px; font-weight: 800; margin-bottom: 4px; background: var(--accent-gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.dtp-status { font-size: 12.5px; color: var(--text-dim); margin-bottom: 12px; }
 .equip-card .item-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .equip-card .item-head h4 { font-size: 14px; margin: 0; }
 .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 800; white-space: nowrap; }
@@ -187,6 +188,7 @@ label { font-size: 12.5px; color: var(--text-dim); display: block; margin-bottom
 .equip-summary-inline { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12.5px; color: var(--text-dim); margin-bottom: 10px; }
 .equip-summary-inline b { color: var(--text); }
 .equip-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.eq-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -2px; padding: 0 2px; }
 .simple-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 13px; }
 .simple-table th, .simple-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }

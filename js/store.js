@@ -295,6 +295,25 @@ export async function saveEquipmentCheckin(projectId, logId, checkinItems, user)
   });
   await logActivity(projectId, user, "updated", `Nhập kho thiết bị (${checkinItems.length} mục)`);
 }
+// Lấy TẤT CẢ phiếu xuất/nhập kho của 1 dự án (1 lần, không realtime) — dùng để
+// liệt kê các thiết bị/vật tư đã xuất kho cho phần "Vật tư tiêu hao" chọn theo dõi.
+export async function getEquipmentLogsOnce(projectId) {
+  const snap = await getDocs(query(collection(db, "projects", projectId, "equipmentLogs"), orderBy("createdAt", "desc")));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+// Cập nhật lại "số lượng còn lại" của 1 mục trong phiếu xuất kho, sau khi đã
+// khấu trừ tiêu hao — để phiếu xuất kho luôn phản ánh đúng tồn kho thực tế.
+export async function updateEquipmentLogItemRemaining(projectId, logId, itemIndex, remainingQty, user) {
+  const ref = doc(db, "projects", projectId, "equipmentLogs", logId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data();
+  const items = [...(data.items || [])];
+  if (!items[itemIndex]) return;
+  items[itemIndex] = { ...items[itemIndex], remainingQty };
+  await updateDoc(ref, { items });
+  await logActivity(projectId, user, "updated", `Cập nhật tồn kho sau tiêu hao: ${items[itemIndex].name || "—"}`);
+}
 export async function deleteEquipmentLog(projectId, logId, user) {
   await deleteDoc(doc(db, "projects", projectId, "equipmentLogs", logId));
   await logActivity(projectId, user, "deleted", "Phiếu xuất/nhập thiết bị");

@@ -1,6 +1,6 @@
 import { sumDailyLog } from "./store.js";
 import { t } from "./i18n.js";
-import { EQUIPMENT_CATALOG } from "./equipment-catalog.js";
+import { EQUIPMENT_CATALOG, EQUIPMENT_CATEGORIES } from "./equipment-catalog.js";
 
 const DRILL_ICON_INNER = `<rect x="10" y="2" width="4" height="2.6" rx="0.5"/><path d="M10.2 4.6 L9.4 14.5"/><path d="M13.8 4.6 L14.6 14.5"/><path d="M9.4 14.5 L12 21 L14.6 14.5"/><path d="M9.9 8 L14.1 8"/><path d="M9.65 11.2 L14.35 11.2"/>`;
 
@@ -661,9 +661,10 @@ export function slugify(str) {
 // EQUIPMENT CHECK IN / CHECK OUT REPORTS
 // ============================================================
 function equipItemName(it, lang) {
+  if (it.name) return it.name;
   if (it.customName) return it.customName;
   const cat = EQUIPMENT_CATALOG.find((e) => e.id === it.itemId);
-  return cat ? (lang === "vi" ? cat.vi : cat.en) : it.itemId;
+  return cat ? (lang === "vi" ? cat.vi : cat.en) : (it.itemId || "—");
 }
 function reportHead(lang, exportedAt) {
   return `<div class="report-head">
@@ -693,6 +694,7 @@ export function buildEquipmentCheckoutHTML({ project, log, currentUser, lang }) 
       <td>${escapeHtml(equipItemName(it, lang))}</td>
       <td>${escapeHtml(it.spec || "—")}</td>
       <td class="num">${it.qty}</td>
+      <td>${it.imageUrl ? `<a href="${escapeHtml(it.imageUrl)}">${escapeHtml(t("viewImage"))}</a>` : "—"}</td>
       <td></td>
     </tr>`).join("");
 
@@ -711,9 +713,9 @@ export function buildEquipmentCheckoutHTML({ project, log, currentUser, lang }) 
     <div class="report-section">
       <table class="report-table-closed">
         <thead><tr>
-          <th>No.</th><th>${t("equipmentName")}</th><th>${t("specColumn")}</th><th>${t("quantity")}</th><th>${t("noteCol")}</th>
+          <th>No.</th><th>${t("equipmentName")}</th><th>${t("specColumn")}</th><th>${t("quantity")}</th><th>${t("viewImage")}</th><th>${t("noteCol")}</th>
         </tr></thead>
-        <tbody>${rows || `<tr><td colspan="5" style="text-align:center;color:#888;">${t("noItems")}</td></tr>`}</tbody>
+        <tbody>${rows || `<tr><td colspan="6" style="text-align:center;color:#888;">${t("noItems")}</td></tr>`}</tbody>
       </table>
     </div>
     ${reportSignRow(currentUser)}
@@ -805,6 +807,11 @@ function buyLocationDisplayReport(m) {
   return { text: legacy.name || legacy.url, url: legacy.url || null };
 }
 
+function categoryLabelReport(catId, lang) {
+  const c = EQUIPMENT_CATEGORIES.find((e) => e.id === catId);
+  if (c) return lang === "vi" ? c.vi : c.en;
+  return catId || "";
+}
 export function buildMaterialsPdfHTML({ materials, currentUser, lang }) {
   const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
   const rows = (materials || []).map((m, i) => {
@@ -812,6 +819,8 @@ export function buildMaterialsPdfHTML({ materials, currentUser, lang }) {
     return `<tr>
       <td class="num">${i + 1}</td>
       <td>${escapeHtml(m.name || "—")}</td>
+      <td>${m.category ? escapeHtml(categoryLabelReport(m.category, lang)) : "—"}</td>
+      <td>${escapeHtml(m.spec || "—")}</td>
       <td class="num">${escapeHtml(formatMaterialPriceReport(m))}</td>
       <td>${loc ? (loc.url ? `<a href="${escapeHtml(loc.url)}">${escapeHtml(loc.text)}</a>` : escapeHtml(loc.text)) : "—"}</td>
       <td>${m.imageUrl ? `<a href="${escapeHtml(m.imageUrl)}">${escapeHtml(t("viewImage"))}</a>` : "—"}</td>
@@ -826,9 +835,9 @@ export function buildMaterialsPdfHTML({ materials, currentUser, lang }) {
     <div class="report-section">
       <table class="report-table-closed">
         <thead><tr>
-          <th>${t("no")}</th><th>${t("materialName")}</th><th>${t("price")}</th><th>${t("buyLocation")}</th><th>${t("viewImage")}</th><th>${t("lastUpdated")}</th>
+          <th>${t("no")}</th><th>${t("materialName")}</th><th>${t("materialCategory")}</th><th>${t("materialSpec")}</th><th>${t("price")}</th><th>${t("buyLocation")}</th><th>${t("viewImage")}</th><th>${t("lastUpdated")}</th>
         </tr></thead>
-        <tbody>${rows || `<tr><td colspan="6" style="text-align:center;color:#888;">${t("noMaterials")}</td></tr>`}</tbody>
+        <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:#888;">${t("noMaterials")}</td></tr>`}</tbody>
       </table>
     </div>
     ${reportSignRow(currentUser)}
@@ -1001,9 +1010,13 @@ export function buildConsumablesReportHTML({ project, items, currentUser, lang }
   rows.sort((a, b) => a.dKey === b.dKey ? a.name.localeCompare(b.name) : a.dKey.localeCompare(b.dKey));
 
   const totalsByItem = {};
-  rows.forEach((r) => {
-    const key = r.name + "|" + (r.unit || "");
-    totalsByItem[key] = (totalsByItem[key] || 0) + r.qty;
+  (items || []).forEach((it) => {
+    const key = it.name + "|" + (it.unit || "");
+    const totalConsumed = Object.values(it.dailyLog || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+    totalsByItem[key] = {
+      total: totalConsumed,
+      issuedQty: it.issuedQty != null ? Number(it.issuedQty) : null,
+    };
   });
 
   const rowsHtml = rows.map((r) => `<tr>
@@ -1013,9 +1026,15 @@ export function buildConsumablesReportHTML({ project, items, currentUser, lang }
       <td class="num">${r.qty}</td>
     </tr>`).join("");
 
-  const totalsRows = Object.entries(totalsByItem).map(([key, total]) => {
+  const totalsRows = Object.entries(totalsByItem).map(([key, info]) => {
     const [name, unit] = key.split("|");
-    return `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(unit || "—")}</td><td class="num">${total}</td></tr>`;
+    const remaining = info.issuedQty != null ? Math.max(0, info.issuedQty - info.total) : null;
+    return `<tr>
+      <td>${escapeHtml(name)}</td><td>${escapeHtml(unit || "—")}</td>
+      <td class="num">${info.issuedQty != null ? info.issuedQty : "—"}</td>
+      <td class="num">${info.total}</td>
+      <td class="num">${remaining != null ? remaining : "—"}</td>
+    </tr>`;
   }).join("");
 
   return `
@@ -1030,8 +1049,8 @@ export function buildConsumablesReportHTML({ project, items, currentUser, lang }
     <div class="report-section">
       <div class="section-title">${t("consumablesTotalTitle")}</div>
       <table class="report-table-closed">
-        <thead><tr><th>${t("materialName")}</th><th>${t("unitLabel")}</th><th>${t("totalQty")}</th></tr></thead>
-        <tbody>${totalsRows || `<tr><td colspan="3" style="text-align:center;color:#888;">${t("noConsumables")}</td></tr>`}</tbody>
+        <thead><tr><th>${t("materialName")}</th><th>${t("unitLabel")}</th><th>${t("issuedQty")}</th><th>${t("totalQty")}</th><th>${t("remainingQty")}</th></tr></thead>
+        <tbody>${totalsRows || `<tr><td colspan="5" style="text-align:center;color:#888;">${t("noConsumables")}</td></tr>`}</tbody>
       </table>
     </div>
     <div class="report-section">

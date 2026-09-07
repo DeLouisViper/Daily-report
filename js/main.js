@@ -11,6 +11,7 @@ import {
   watchActivity, watchGlobalActivity, dateKey, sumDailyLog,
   watchDrillingMachines, addDrillingMachine, updateDrillingMachine, deleteDrillingMachine, saveDrillingMachineDayLog, updateDrillingMachineField,
   watchEquipmentLogs, getLatestEquipmentLog, createEquipmentCheckout, updateEquipmentCheckout, saveEquipmentCheckin, deleteEquipmentLog,
+  getEquipmentLogsOnce, updateEquipmentLogItemRemaining,
   watchConsumables, addConsumableItem, updateConsumableDay, deleteConsumableItem,
   watchMaterials, getMaterialsOnce, addMaterial, updateMaterial, deleteMaterial,
   watchOpenDrillTeamPayment, getOpenDrillTeamPayment, saveDrillTeamPaymentProgress, finalizeDrillTeamPayment,
@@ -1450,9 +1451,9 @@ function openDrillMachineModal(projectId, m) {
 // ============================================================
 function equipItemLabel(it) {
   if (!it) return "";
-  if (it.customName) return it.customName;
-  const cat = EQUIPMENT_CATALOG.find((e) => e.id === it.itemId);
-  const name = cat ? (getLang() === "vi" ? cat.vi : cat.en) : it.itemId;
+  // Tương thích ngược: các phiếu lưu TRƯỚC khi đổi sang lấy dữ liệu từ Bảng
+  // giá vật tư vẫn dùng itemId/customName tham chiếu tới danh mục cũ.
+  const name = it.name || it.customName || EQUIPMENT_CATALOG.find((e) => e.id === it.itemId)?.[getLang() === "vi" ? "vi" : "en"] || it.itemId || "—";
   return it.spec ? `${name} — ${it.spec}` : name;
 }
 function equipTimeLabel(ts) {
@@ -1659,6 +1660,7 @@ function renderEquipmentView() {
 
   // ---------- NEW / EDIT CHECKOUT MODE ----------
   function renderNewMode() {
+    let materialsCache = [];
     const catOptions = `<option value="">${t("allCategories")}</option>` + EQUIPMENT_CATEGORIES.map((c) => `<option value="${c.id}">${escapeHtml(getLang() === "vi" ? c.vi : c.en)}</option>`).join("");
     mainView.innerHTML = topbarHtml("equipmentTitle") + `
       <button class="btn btn-ghost btn-sm" id="eq_back" data-i18n="backToList"></button>
@@ -1669,11 +1671,11 @@ function renderEquipmentView() {
           <div class="field"><label data-i18n="searchEquipment"></label><input id="eq_search" data-i18n-placeholder="searchEquipment" /></div>
         </div>
         <div class="field-row">
-          <div class="field"><label data-i18n="selectEquipment"></label><select id="eq_item"></select></div>
-          <div class="field hidden" id="eq_specWrap"><label data-i18n="selectSpec"></label><select id="eq_spec"></select></div>
-          <div class="field hidden" id="eq_customWrap"><label data-i18n="customEquipmentName"></label><input id="eq_custom" /></div>
+          <div class="field"><label data-i18n="selectEquipment"></label><select id="eq_item"><option value="">${t("customInput")}</option></select></div>
+          <div class="field" id="eq_customWrap"><label data-i18n="customEquipmentName"></label><input id="eq_custom" /></div>
           <div class="field" style="max-width:120px;"><label data-i18n="quantity"></label><input type="number" id="eq_qty" min="1" value="1" /></div>
         </div>
+        <p class="hint-note" data-i18n="itemsFromMaterialsNote"></p>
         <button class="btn btn-primary btn-sm" id="eq_add" data-i18n="addItem"></button>
       </div>
       <div class="card">
@@ -1689,37 +1691,29 @@ function renderEquipmentView() {
     const catSel = document.getElementById("eq_cat");
     const searchInput = document.getElementById("eq_search");
     const itemSel = document.getElementById("eq_item");
-    const specWrap = document.getElementById("eq_specWrap");
-    const specSel = document.getElementById("eq_spec");
     const customWrap = document.getElementById("eq_customWrap");
     const customInput = document.getElementById("eq_custom");
     const qtyInput = document.getElementById("eq_qty");
 
+    function materialLabel(m) { return m.spec ? `${m.name} — ${m.spec}` : m.name; }
     function fillItemSelect() {
       const cat = catSel.value;
       const q = searchInput.value.trim().toLowerCase();
-      const filtered = EQUIPMENT_CATALOG.filter((e) => {
-        if (cat && e.cat !== cat) return false;
+      const filtered = materialsCache.filter((m) => {
+        if (cat && m.category !== cat) return false;
         if (!q) return true;
-        return e.vi.toLowerCase().includes(q) || e.en.toLowerCase().includes(q);
-      });
-      itemSel.innerHTML = filtered.map((e) => `<option value="${e.id}">${escapeHtml(getLang() === "vi" ? e.vi : e.en)}</option>`).join("");
+        return (m.name || "").toLowerCase().includes(q) || (m.spec || "").toLowerCase().includes(q);
+      }).sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { numeric: true, sensitivity: "base" }));
+      itemSel.innerHTML = `<option value="">${t("customInput")}</option>` + filtered.map((m) => `<option value="${m.id}">${escapeHtml(materialLabel(m))}</option>`).join("");
       updateItemDependentFields();
     }
     function updateItemDependentFields() {
-      const it = EQUIPMENT_CATALOG.find((e) => e.id === itemSel.value);
-      if (it && it.specs) {
-        specWrap.classList.remove("hidden");
-        specSel.innerHTML = it.specs.map((s) => `<option value="${escapeAttr(s)}">${escapeHtml(s)}</option>`).join("");
-      } else {
-        specWrap.classList.add("hidden");
-      }
-      customWrap.classList.toggle("hidden", !(it && it.custom));
+      customWrap.classList.toggle("hidden", !!itemSel.value);
     }
     catSel.addEventListener("change", fillItemSelect);
     searchInput.addEventListener("input", fillItemSelect);
     itemSel.addEventListener("change", updateItemDependentFields);
-    fillItemSelect();
+    getMaterialsOnce().then((mats) => { materialsCache = mats; fillItemSelect(); });
 
     function renderDraftTable() {
       const el = document.getElementById("eq_draftTable");
@@ -1728,7 +1722,7 @@ function renderEquipmentView() {
         <th data-i18n="equipmentName"></th><th data-i18n="specColumn"></th><th data-i18n="quantity"></th><th></th>
       </tr></thead><tbody>
       ${draftItems.map((it, i) => `<tr>
-        <td>${escapeHtml(it.customName || (EQUIPMENT_CATALOG.find((e) => e.id === it.itemId)?.[getLang() === "vi" ? "vi" : "en"] || it.itemId))}</td>
+        <td>${escapeHtml(it.name)}</td>
         <td>${escapeHtml(it.spec || "—")}</td>
         <td><input type="number" min="0" class="draft-qty" data-idx="${i}" value="${it.qty}" style="width:70px;" /></td>
         <td><button type="button" class="btn btn-ghost btn-sm draft-remove" data-idx="${i}">✕</button></td>
@@ -1745,17 +1739,22 @@ function renderEquipmentView() {
     renderDraftTable();
 
     document.getElementById("eq_add").addEventListener("click", () => {
-      const itemId = itemSel.value;
-      if (!itemId) return;
-      const it = EQUIPMENT_CATALOG.find((e) => e.id === itemId);
-      const spec = it && it.specs ? specSel.value : null;
-      const customName = it && it.custom ? customInput.value.trim() : null;
+      const materialId = itemSel.value;
       const qty = Number(qtyInput.value) || 0;
       if (qty <= 0) return;
-      if (it && it.custom && !customName) { alert(t("customEquipmentName")); return; }
-      const existing = draftItems.find((d) => d.itemId === itemId && d.spec === spec && d.customName === customName);
+      let name, spec, imageUrl;
+      if (materialId) {
+        const m = materialsCache.find((x) => x.id === materialId);
+        if (!m) return;
+        name = m.name; spec = m.spec || null; imageUrl = m.imageUrl || null;
+      } else {
+        name = customInput.value.trim();
+        if (!name) { alert(t("customEquipmentName")); return; }
+        spec = null; imageUrl = null;
+      }
+      const existing = draftItems.find((d) => d.name === name && d.spec === spec);
       if (existing) existing.qty += qty;
-      else draftItems.push({ itemId, spec, customName, qty });
+      else draftItems.push({ materialId: materialId || null, name, spec, imageUrl, qty });
       qtyInput.value = "1";
       if (customInput) customInput.value = "";
       renderDraftTable();
@@ -1785,7 +1784,10 @@ function renderEquipmentView() {
   function renderCheckinMode() {
     const log = checkinLog;
     const existingByKey = {};
-    (log.checkin?.items || []).forEach((it) => { existingByKey[`${it.itemId}|${it.spec || ""}|${it.customName || ""}`] = it; });
+    (log.checkin?.items || []).forEach((it) => { existingByKey[`${it.name}|${it.spec || ""}`] = it; });
+    function displayName(it) {
+      return it.name || it.customName || EQUIPMENT_CATALOG.find((e) => e.id === it.itemId)?.[getLang() === "vi" ? "vi" : "en"] || it.itemId || "—";
+    }
 
     mainView.innerHTML = topbarHtml("equipmentTitle") + `
       <button class="btn btn-ghost btn-sm" id="eq_back2" data-i18n="backToList"></button>
@@ -1800,11 +1802,11 @@ function renderEquipmentView() {
           </tr></thead>
           <tbody id="eq_checkinBody">
           ${(log.items || []).map((it, i) => {
-            const key = `${it.itemId}|${it.spec || ""}|${it.customName || ""}`;
+            const nm = displayName(it);
+            const key = `${nm}|${it.spec || ""}`;
             const prev = existingByKey[key];
-            const name = it.customName || (EQUIPMENT_CATALOG.find((e) => e.id === it.itemId)?.[getLang() === "vi" ? "vi" : "en"] || it.itemId);
             return `<tr data-idx="${i}">
-              <td>${escapeHtml(name)}</td>
+              <td>${escapeHtml(nm)}</td>
               <td>${escapeHtml(it.spec || "—")}</td>
               <td class="num">${it.qty}</td>
               <td><input type="number" min="0" class="ci-returned" value="${prev ? prev.returnedQty : it.qty}" style="width:70px;" /></td>
@@ -1826,7 +1828,7 @@ function renderEquipmentView() {
         const idx = +row.dataset.idx;
         const it = log.items[idx];
         return {
-          itemId: it.itemId, spec: it.spec || null, customName: it.customName || null,
+          name: displayName(it), spec: it.spec || null,
           issuedQty: it.qty,
           returnedQty: Number(row.querySelector(".ci-returned").value) || 0,
           damagedQty: Number(row.querySelector(".ci-damaged").value) || 0,
@@ -1854,6 +1856,7 @@ function renderEquipmentView() {
   function renderConsumablesMode() {
     let items = [];
     let materialsOnce = [];
+    let checkoutLogs = [];
 
     mainView.innerHTML = topbarHtml("equipmentTitle") + tabsHtml() + `
       <div class="report-toolbar">
@@ -1862,6 +1865,10 @@ function renderEquipmentView() {
         <button class="btn btn-ghost" id="cs_exportPdf" data-i18n="exportConsumablesPdf"></button>
       </div>
       ${canEdit() ? `
+      <div class="card">
+        <h3 data-i18n="fromCheckoutTitle"></h3>
+        <div id="cs_fromCheckout"></div>
+      </div>
       <div class="card">
         <h3 data-i18n="addConsumableTitle"></h3>
         <div class="field-row">
@@ -1889,7 +1896,9 @@ function renderEquipmentView() {
     if (materialSelect) {
       getMaterialsOnce().then((mats) => {
         materialsOnce = mats;
-        materialSelect.innerHTML = `<option value="">${t("customInput")}</option>` + mats.map((m) => `<option value="${escapeAttr(m.name)}">${escapeHtml(m.name)}</option>`).join("");
+        materialSelect.innerHTML = `<option value="">${t("customInput")}</option>` + mats
+          .sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { numeric: true, sensitivity: "base" }))
+          .map((m) => `<option value="${m.id}">${escapeHtml(m.spec ? `${m.name} — ${m.spec}` : m.name)}</option>`).join("");
       });
       materialSelect.addEventListener("change", () => {
         customWrap.classList.toggle("hidden", !!materialSelect.value);
@@ -1898,11 +1907,19 @@ function renderEquipmentView() {
 
     const addBtn = document.getElementById("cs_add");
     if (addBtn) addBtn.addEventListener("click", async () => {
-      const selected = materialSelect.value;
+      const selectedId = materialSelect.value;
       const customName = document.getElementById("cs_customName").value.trim();
-      const name = selected || customName;
+      let name, unit;
+      if (selectedId) {
+        const m = materialsOnce.find((x) => x.id === selectedId);
+        if (!m) return;
+        name = m.spec ? `${m.name} — ${m.spec}` : m.name;
+        unit = document.getElementById("cs_unit").value.trim();
+      } else {
+        name = customName;
+        unit = document.getElementById("cs_unit").value.trim();
+      }
       if (!name) return;
-      const unit = document.getElementById("cs_unit").value.trim();
       showSaveIndicator(true);
       await addConsumableItem(currentProject.id, { name, unit }, CURRENT_USER);
       showSaveIndicator();
@@ -1912,20 +1929,57 @@ function renderEquipmentView() {
       customWrap.classList.remove("hidden");
     });
 
+    // Danh sách thiết bị/vật tư ĐÃ xuất kho cho dự án này nhưng CHƯA được theo
+    // dõi tiêu hao — cho phép thêm nhanh (kèm số lượng đã xuất làm mốc để tính
+    // "còn lại" sau khi khấu trừ tiêu hao từng ngày).
+    function renderFromCheckout() {
+      const el = document.getElementById("cs_fromCheckout");
+      if (!el) return;
+      const tracked = new Set(items.filter((it) => it.sourceLogId).map((it) => `${it.sourceLogId}|${it.sourceItemIndex}`));
+      const available = [];
+      checkoutLogs.forEach((log) => {
+        (log.items || []).forEach((it, idx) => {
+          const key = `${log.id}|${idx}`;
+          if (tracked.has(key)) return;
+          available.push({ logId: log.id, itemIndex: idx, name: equipItemLabel(it), unit: it.spec || "", issuedQty: it.qty });
+        });
+      });
+      if (!available.length) { el.innerHTML = `<div class="empty-state">${t("noAvailableFromCheckout")}</div>`; return; }
+      el.innerHTML = available.map((a, i) => `
+        <div class="cs-avail-row" data-i="${i}">
+          <span class="cs-avail-name">${escapeHtml(a.name)}</span>
+          <span class="cs-avail-qty">${t("issuedQty")}: ${a.issuedQty}</span>
+          <button type="button" class="btn btn-ghost btn-sm cs-avail-track">${t("trackConsumption")}</button>
+        </div>`).join("");
+      el.querySelectorAll(".cs-avail-row").forEach((row) => {
+        const a = available[+row.dataset.i];
+        row.querySelector(".cs-avail-track").addEventListener("click", async () => {
+          showSaveIndicator(true);
+          await addConsumableItem(currentProject.id, {
+            name: a.name, unit: a.unit, sourceLogId: a.logId, sourceItemIndex: a.itemIndex, issuedQty: a.issuedQty,
+          }, CURRENT_USER);
+          showSaveIndicator();
+        });
+      });
+    }
+
     function renderList() {
       const el = document.getElementById("cs_list");
       if (!el) return;
       const dKey = dateInput.value || dateKey();
       if (!items.length) { el.innerHTML = `<div class="empty-state">${t("noConsumables")}</div>`; return; }
       el.innerHTML = `<div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div><div class="table-scroll"><table class="simple-table">
-        <thead><tr><th data-i18n="materialName"></th><th data-i18n="unitLabel"></th><th data-i18n="quantity"></th>${canEdit() ? "<th></th>" : ""}</tr></thead>
+        <thead><tr><th data-i18n="materialName"></th><th data-i18n="unitLabel"></th><th data-i18n="quantity"></th><th data-i18n="remainingQty"></th>${canEdit() ? "<th></th>" : ""}</tr></thead>
         <tbody>
           ${items.map((it) => {
             const qty = (it.dailyLog || {})[dKey];
+            const totalConsumed = Object.values(it.dailyLog || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+            const remaining = it.issuedQty != null ? (Number(it.issuedQty) - totalConsumed) : null;
             return `<tr data-id="${it.id}">
               <td>${escapeHtml(it.name)}</td>
               <td>${escapeHtml(it.unit || "—")}</td>
               <td><input type="number" min="0" class="cs-qty" value="${qty ?? ""}" ${canEdit() ? "" : "disabled"} style="width:90px;" /></td>
+              <td class="num">${remaining != null ? remaining : "—"}</td>
               ${canEdit() ? `<td><button type="button" class="btn btn-ghost btn-sm cs-remove">✕</button></td>` : ""}
             </tr>`;
           }).join("")}
@@ -1957,7 +2011,9 @@ function renderEquipmentView() {
       cleanupProjectWatchers();
       (async () => {
         currentProject = await getProject(pid);
-        const unsub = watchConsumables(pid, (data) => { items = data; renderList(); });
+        checkoutLogs = await getEquipmentLogsOnce(pid);
+        renderFromCheckout();
+        const unsub = watchConsumables(pid, (data) => { items = data; renderFromCheckout(); renderList(); });
         currentProjectUnsubs.push(unsub);
       })();
     }
@@ -1967,6 +2023,16 @@ function renderEquipmentView() {
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = "…";
       try {
+        // Khấu trừ tiêu hao và cập nhật lại "còn lại" cho phiếu xuất kho gốc
+        // (nếu vật tư này được theo dõi từ 1 phiếu xuất kho cụ thể).
+        for (const it of items) {
+          if (!it.sourceLogId) continue;
+          const totalConsumed = Object.values(it.dailyLog || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+          const remaining = Math.max(0, (Number(it.issuedQty) || 0) - totalConsumed);
+          try {
+            await updateEquipmentLogItemRemaining(currentProject.id, it.sourceLogId, it.sourceItemIndex, remaining, CURRENT_USER);
+          } catch (err) { console.warn("cannot update source log remaining", err); }
+        }
         const html = buildConsumablesReportHTML({ project: currentProject, items, currentUser: CURRENT_USER, lang: getLang() });
         const holder = document.createElement("div");
         holder.style.position = "fixed"; holder.style.top = "0"; holder.style.left = "-99999px";
@@ -2496,11 +2562,19 @@ function formatMaterialTime(ts) {
   return d.toLocaleDateString(lang) + " " + d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
 }
 
-function openMaterialModal(material) {
-  const editing = !!material;
+function categoryLabel(catId) {
+  const c = EQUIPMENT_CATEGORIES.find((e) => e.id === catId);
+  if (c) return getLang() === "vi" ? c.vi : c.en;
+  return catId || "";
+}
+function openMaterialModal(material, opts = {}) {
+  const isCopy = !!opts.copy;
+  const editing = !!material && !isCopy;
   const prefill = (material && !material.buyLocationName && !material.buyLocationUrl && material.buyLocation)
     ? splitLegacyBuyLocation(material.buyLocation)
     : { name: material?.buyLocationName || "", url: material?.buyLocationUrl || "" };
+  const knownCat = material && EQUIPMENT_CATEGORIES.some((c) => c.id === material.category);
+  const catValue = material?.category || "";
   const html = `
   <div class="modal-backdrop" id="mtModalBackdrop">
     <div class="modal">
@@ -2509,6 +2583,19 @@ function openMaterialModal(material) {
         <button class="icon-btn" id="mtModalClose">✕</button>
       </div>
       <div class="field"><label data-i18n="materialName"></label><input id="mt_name" value="${escapeAttr(material?.name)}" /></div>
+      <div class="field-row">
+        <div class="field"><label data-i18n="materialCategory"></label>
+          <select id="mt_category">
+            <option value="">—</option>
+            ${EQUIPMENT_CATEGORIES.map((c) => `<option value="${c.id}" ${catValue === c.id ? "selected" : ""}>${escapeHtml(getLang() === "vi" ? c.vi : c.en)}</option>`).join("")}
+            <option value="__custom__" ${material?.category && !knownCat ? "selected" : ""}>${t("otherCustom")}</option>
+          </select>
+        </div>
+        <div class="field ${material?.category && !knownCat ? "" : "hidden"}" id="mt_categoryCustomWrap">
+          <label data-i18n="customCategoryName"></label><input id="mt_categoryCustom" value="${escapeAttr(!knownCat ? material?.category : "")}" />
+        </div>
+      </div>
+      <div class="field"><label data-i18n="materialSpec"></label><input id="mt_spec" data-i18n-placeholder="materialSpecPlaceholder" value="${escapeAttr(material?.spec)}" /></div>
       <div class="field-row">
         <div class="field"><label data-i18n="price"></label><input type="number" step="any" min="0" id="mt_price" value="${material ? material.price : ""}" /></div>
         <div class="field" style="max-width:120px;"><label data-i18n="currency"></label>
@@ -2534,17 +2621,22 @@ function openMaterialModal(material) {
   const close = () => backdrop.remove();
   document.getElementById("mtModalClose").addEventListener("click", close);
   document.getElementById("mtModalCancel").addEventListener("click", close);
+  const catSelect = document.getElementById("mt_category");
+  const catCustomWrap = document.getElementById("mt_categoryCustomWrap");
+  catSelect.addEventListener("change", () => catCustomWrap.classList.toggle("hidden", catSelect.value !== "__custom__"));
   document.getElementById("mtModalSave").addEventListener("click", async () => {
     const name = document.getElementById("mt_name").value.trim();
     const price = Number(document.getElementById("mt_price").value);
     const currency = document.getElementById("mt_currency").value;
+    const category = catSelect.value === "__custom__" ? document.getElementById("mt_categoryCustom").value.trim() : catSelect.value;
+    const spec = document.getElementById("mt_spec").value.trim();
     const buyLocationName = document.getElementById("mt_locationName").value.trim();
     const buyLocationUrl = document.getElementById("mt_locationUrl").value.trim();
     const imageUrl = document.getElementById("mt_image").value.trim();
     const errEl = document.getElementById("mtModalError");
     if (!name) { errEl.textContent = t("materialNameRequired"); return; }
     if (!(price >= 0)) { errEl.textContent = t("priceRequired"); return; }
-    const data = { name, price, currency, buyLocationName, buyLocationUrl, imageUrl };
+    const data = { name, category, spec, price, currency, buyLocationName, buyLocationUrl, imageUrl };
     const saveBtn = document.getElementById("mtModalSave");
     saveBtn.disabled = true;
     try {
@@ -2564,11 +2656,16 @@ function openMaterialModal(material) {
 function renderMaterialsView() {
   let materials = [];
   let searchTerm = "";
+  let categoryFilter = "";
 
   function matchesSearch(m) {
+    if (categoryFilter && (m.category || "") !== categoryFilter) return false;
     if (!searchTerm.trim()) return true;
     const q = searchTerm.trim().toLowerCase();
-    return (m.name || "").toLowerCase().includes(q) || (m.buyLocation || "").toLowerCase().includes(q);
+    return (m.name || "").toLowerCase().includes(q) || (m.buyLocation || "").toLowerCase().includes(q) || (m.spec || "").toLowerCase().includes(q);
+  }
+  function sortedMaterials(list) {
+    return [...list].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { numeric: true, sensitivity: "base" }));
   }
 
   function render() {
@@ -2577,6 +2674,10 @@ function renderMaterialsView() {
         <input type="text" id="mt_search" class="materials-search" data-i18n-placeholder="searchMaterialsPlaceholder" value="${escapeAttr(searchTerm)}" />
       </div>
       <div class="report-toolbar materials-toolbar">
+        <div class="field" style="max-width:220px;"><select id="mt_categoryFilter">
+          <option value="">${t("allCategories")}</option>
+          ${EQUIPMENT_CATEGORIES.map((c) => `<option value="${c.id}">${escapeHtml(getLang() === "vi" ? c.vi : c.en)}</option>`).join("")}
+        </select></div>
         ${canEdit() ? `<button class="btn btn-primary" id="mt_add" data-i18n="addMaterial"></button>` : ""}
         <button class="btn btn-ghost" id="mt_exportPdf" data-i18n="exportPdf"></button>
         <button class="btn btn-ghost" id="mt_exportExcel" data-i18n="exportExcel"></button>
@@ -2587,6 +2688,8 @@ function renderMaterialsView() {
 
     const searchInput = document.getElementById("mt_search");
     searchInput.addEventListener("input", () => { searchTerm = searchInput.value; renderList(); });
+    const categorySelect = document.getElementById("mt_categoryFilter");
+    categorySelect.addEventListener("change", () => { categoryFilter = categorySelect.value; renderList(); });
 
     const addBtn = document.getElementById("mt_add");
     if (addBtn) addBtn.addEventListener("click", () => openMaterialModal(null));
@@ -2596,7 +2699,7 @@ function renderMaterialsView() {
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = "…";
       try {
-        const filtered = materials.filter(matchesSearch);
+        const filtered = sortedMaterials(materials.filter(matchesSearch));
         const html = buildMaterialsPdfHTML({ materials: filtered, currentUser: CURRENT_USER, lang: getLang() });
         const holder = document.createElement("div");
         holder.style.position = "fixed"; holder.style.top = "0"; holder.style.left = "-99999px";
@@ -2610,12 +2713,14 @@ function renderMaterialsView() {
     });
 
     document.getElementById("mt_exportExcel").addEventListener("click", () => {
-      const filtered = materials.filter(matchesSearch);
+      const filtered = sortedMaterials(materials.filter(matchesSearch));
       const rows = filtered.map((m, i) => {
         const loc = buyLocationDisplay(m);
         return {
           [t("no")]: i + 1,
           [t("materialName")]: m.name || "",
+          [t("materialCategory")]: m.category ? categoryLabel(m.category) : "",
+          [t("materialSpec")]: m.spec || "",
           [t("price")]: m.price ?? "",
           [t("currency")]: m.currency || "",
           [t("buyLocationName")]: loc?.text || "",
@@ -2632,18 +2737,20 @@ function renderMaterialsView() {
 
     function renderList() {
       const listEl = document.getElementById("mt_list");
-      const filtered = materials.filter(matchesSearch);
+      const filtered = sortedMaterials(materials.filter(matchesSearch));
       if (!materials.length) { listEl.innerHTML = `<div class="empty-state">${t("noMaterials")}</div>`; return; }
       if (!filtered.length) { listEl.innerHTML = `<div class="empty-state">${t("noMaterialsFound")}</div>`; return; }
       listEl.innerHTML = filtered.map((m) => `
         <div class="card material-card" data-id="${m.id}">
           <div class="item-head">
-            <h4>${escapeHtml(m.name || "—")}</h4>
+            <h4>${escapeHtml(m.name || "—")}${m.spec ? ` <span class="material-spec">— ${escapeHtml(m.spec)}</span>` : ""}</h4>
             <div class="item-actions">
-              ${canEdit() ? `<button class="btn btn-ghost btn-sm mt-edit" data-i18n="editMaterial"></button>` : ""}
+              ${canEdit() ? `<button class="btn btn-ghost btn-sm mt-copy" data-i18n="copyMaterial"></button>
+              <button class="btn btn-ghost btn-sm mt-edit" data-i18n="editMaterial"></button>` : ""}
               ${isAdmin() ? `<button class="btn btn-danger btn-sm mt-delete" data-i18n="delete"></button>` : ""}
             </div>
           </div>
+          ${m.category ? `<div class="material-category">${escapeHtml(categoryLabel(m.category))}</div>` : ""}
           <div class="material-price">${escapeHtml(formatMaterialPrice(m))}</div>
           <div class="material-meta">
             ${(() => { const loc = buyLocationDisplay(m); return loc ? `<div class="material-location">📍 ${loc.url ? `<a href="${escapeAttr(loc.url)}" target="_blank" rel="noopener">${escapeHtml(loc.text)}</a>` : escapeHtml(loc.text)}</div>` : ""; })()}
@@ -2657,6 +2764,8 @@ function renderMaterialsView() {
         const m = materials.find((x) => x.id === id);
         const editBtn = card.querySelector(".mt-edit");
         if (editBtn) editBtn.addEventListener("click", () => openMaterialModal(m));
+        const copyBtn = card.querySelector(".mt-copy");
+        if (copyBtn) copyBtn.addEventListener("click", () => openMaterialModal(m, { copy: true }));
         const delBtn = card.querySelector(".mt-delete");
         if (delBtn) delBtn.addEventListener("click", async () => {
           if (await showConfirmModal(t("deleteMaterialConfirm"))) {

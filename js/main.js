@@ -287,6 +287,7 @@ function statCard(value, label) {
 function renderProjectsList() {
   const canCreateBtn = canEdit() ? `<button class="btn btn-primary btn-sm" id="newProjectBtn" data-i18n="newProject"></button>` : "";
   mainView.innerHTML = topbarHtml("currentProjects", canCreateBtn) + `
+    <div class="materials-search-wrap"><input type="text" id="proj_search" class="materials-search" data-i18n-placeholder="searchProjectPlaceholder" /></div>
     <div class="tabs" id="projTabs">
       <button class="tab-btn active" data-tab="active">${t("inProgress")}</button>
       <button class="tab-btn" data-tab="completed">${t("completedCount")}</button>
@@ -297,6 +298,16 @@ function renderProjectsList() {
   bindTopbar();
   const btn = document.getElementById("newProjectBtn");
   if (btn) btn.addEventListener("click", () => openProjectModal());
+
+  const searchInput = document.getElementById("proj_search");
+  function applyProjectSearch() {
+    const q = searchInput.value.trim().toLowerCase();
+    document.querySelectorAll(".project-card").forEach((card) => {
+      const name = card.querySelector("h4")?.textContent.toLowerCase() || "";
+      card.style.display = !q || name.includes(q) ? "" : "none";
+    });
+  }
+  searchInput.addEventListener("input", applyProjectSearch);
 
   const tabs = document.querySelectorAll("#projTabs .tab-btn");
   const activeList = document.getElementById("projActiveList");
@@ -327,6 +338,7 @@ function renderProjectsList() {
     bindProjectCards(completedList);
     active.forEach((s) => applySummaryToCard(activeList, s));
     completed.forEach((s) => applySummaryToCard(completedList, s));
+    applyProjectSearch();
   });
 }
 function projectCardHtml(p) {
@@ -426,8 +438,8 @@ function openProjectModal(project) {
       </div>
       <div class="field"><label data-i18n="manager"></label><input id="pf_manager" value="${escapeAttr(project?.manager)}" /></div>
       <div class="field-row">
-        <div class="field"><label data-i18n="startDateSite"></label><input type="date" id="pf_startDate" value="${project?.startDateSite || ""}" /></div>
-        <div class="field"><label data-i18n="endDateSite"></label><input type="date" id="pf_endDate" value="${project?.endDateSite || ""}" /></div>
+        <div class="field"><label data-i18n="startDateSite"></label><input type="date" id="pf_startDate" lang="vi" value="${project?.startDateSite || ""}" /></div>
+        <div class="field"><label data-i18n="endDateSite"></label><input type="date" id="pf_endDate" lang="vi" value="${project?.endDateSite || ""}" /></div>
       </div>
       <div class="field">
         <label data-i18n="workTypes"></label>
@@ -721,8 +733,8 @@ function openBoreholeModal(projectId, b) {
         <div class="field"><label data-i18n="unit"></label><input value="m" disabled /></div>
       </div>
       <div class="field-row">
-        <div class="field"><label data-i18n="itemStartDate"></label><input type="date" id="bh_itemStart" value="${b?.itemStartDate || ""}" /></div>
-        <div class="field"><label data-i18n="itemEndDate"></label><input type="date" id="bh_itemEnd" value="${b?.itemEndDate || ""}" /></div>
+        <div class="field"><label data-i18n="itemStartDate"></label><input type="date" id="bh_itemStart" lang="vi" value="${b?.itemStartDate || ""}" /></div>
+        <div class="field"><label data-i18n="itemEndDate"></label><input type="date" id="bh_itemEnd" lang="vi" value="${b?.itemEndDate || ""}" /></div>
       </div>
       <div class="field-row">
         <div class="field"><label data-i18n="coordN"></label><input id="bh_n" value="${escapeAttr(b?.coordN)}" /></div>
@@ -930,8 +942,12 @@ function renderReportView(preselectedProjectId) {
         <select id="rp_project"></select>
       </div>
       <div class="field">
+        <label data-i18n="searchProject"></label>
+        <input type="text" id="rp_search" data-i18n-placeholder="searchProjectPlaceholder" />
+      </div>
+      <div class="field">
         <label data-i18n="selectDate"></label>
-        <input type="date" id="rp_date" value="${dateKey()}" />
+        <input type="date" id="rp_date" lang="vi" value="${dateKey()}" />
       </div>
       <button class="btn btn-primary" id="rp_exportPdf" data-i18n="exportPdf"></button>
       <button class="btn btn-ghost" id="rp_copy" data-i18n="copySummary"></button>
@@ -955,6 +971,7 @@ function renderReportView(preselectedProjectId) {
   const projSelect = document.getElementById("rp_project");
   projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
   if (preselectedProjectId) projSelect.value = preselectedProjectId;
+  bindProjectSearchSelect(document.getElementById("rp_search"), projSelect, projectsCache);
 
   const includeSoilRockEl = document.getElementById("rp_includeSoilRock");
   includeSoilRockEl.addEventListener("change", () => {
@@ -1077,7 +1094,8 @@ function renderDrillLogView() {
   mainView.innerHTML = topbarHtml("drillLogTitle") + `
     <div class="report-toolbar">
       <div class="field"><label data-i18n="selectProject"></label><select id="dl_project"></select></div>
-      <div class="field"><label data-i18n="selectDate"></label><input type="date" id="dl_date" value="${dateKey()}" /></div>
+      <div class="field"><label data-i18n="searchProject"></label><input type="text" id="dl_search" data-i18n-placeholder="searchProjectPlaceholder" /></div>
+      <div class="field"><label data-i18n="selectDate"></label><input type="date" id="dl_date" lang="vi" value="${dateKey()}" /></div>
       <div class="field"><label data-i18n="selectMachine"></label><select id="dl_machineFilter"></select></div>
       <button class="btn btn-primary" id="dl_exportPdf" data-i18n="exportPdf"></button>
       <button class="btn btn-primary" id="dl_exportRepairLog" data-i18n="exportRepairLog"></button>
@@ -1095,6 +1113,7 @@ function renderDrillLogView() {
 
   function fillProjects() {
     projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+    bindProjectSearchSelect(document.getElementById("dl_search"), projSelect, projectsCache);
   }
   function fillMachineFilter() {
     const prev = machineFilter.value;
@@ -1521,6 +1540,7 @@ function renderEquipmentView() {
     mainView.innerHTML = topbarHtml("equipmentTitle") + tabsHtml() + `
       <div class="report-toolbar">
         <div class="field"><label data-i18n="selectProject"></label><select id="eq_project"></select></div>
+        <div class="field"><label data-i18n="searchProject"></label><input type="text" id="eq_search_project" data-i18n-placeholder="searchProjectPlaceholder" /></div>
         ${canEdit() ? `<button class="btn btn-primary" id="eq_new" data-i18n="newCheckout"></button>
         <button class="btn btn-ghost" id="eq_repeat" data-i18n="repeatPreviousProject"></button>` : ""}
       </div>
@@ -1530,6 +1550,7 @@ function renderEquipmentView() {
     bindTabs();
     const projSelect = document.getElementById("eq_project");
     projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+    bindProjectSearchSelect(document.getElementById("eq_search_project"), projSelect, projectsCache);
     if (currentProject) projSelect.value = currentProject.id;
 
     async function loadProject(pid) {
@@ -1861,7 +1882,8 @@ function renderEquipmentView() {
     mainView.innerHTML = topbarHtml("equipmentTitle") + tabsHtml() + `
       <div class="report-toolbar">
         <div class="field"><label data-i18n="selectProject"></label><select id="cs_project"></select></div>
-        <div class="field"><label data-i18n="selectDate"></label><input type="date" id="cs_date" value="${dateKey()}" /></div>
+        <div class="field"><label data-i18n="searchProject"></label><input type="text" id="cs_search_project" data-i18n-placeholder="searchProjectPlaceholder" /></div>
+        <div class="field"><label data-i18n="selectDate"></label><input type="date" id="cs_date" lang="vi" value="${dateKey()}" /></div>
         <button class="btn btn-ghost" id="cs_exportPdf" data-i18n="exportConsumablesPdf"></button>
       </div>
       ${canEdit() ? `
@@ -1885,6 +1907,7 @@ function renderEquipmentView() {
 
     const projSelect = document.getElementById("cs_project");
     projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+    bindProjectSearchSelect(document.getElementById("cs_search_project"), projSelect, projectsCache);
     if (currentProject) projSelect.value = currentProject.id;
     projSelect.addEventListener("change", () => loadProject(projSelect.value));
 
@@ -2092,14 +2115,14 @@ function renderDrillTeamPaymentView() {
   let selectedTeam = "";
   let method = "contract"; // "contract" | "daily"
 
-  let soilRate = 0, soilCurrency = "VND", rockRate = 0, rockCurrency = "VND";
+  let soilRate = 0, soilCurrency = "USD", rockRate = 0, rockCurrency = "USD";
 
   let startDate = "", endDate = "";
-  let workerRate = 0, workerCurrency = "VND", laborRate = 0, laborCurrency = "VND";
+  let workerRate = 0, workerCurrency = "USD", laborRate = 0, laborCurrency = "USD";
   let workerCount = 1, laborCount = 1;
   let dailyOverrides = {};
 
-  let allowanceAmount = 0, allowanceCurrency = "VND";
+  let allowanceAmount = 0, allowanceCurrency = "USD";
   let advances = [];
   let drillTeamRep = "";
 
@@ -2152,6 +2175,7 @@ function renderDrillTeamPaymentView() {
   mainView.innerHTML = topbarHtml("drillPayTitle") + `
     <div class="report-toolbar">
       <div class="field"><label data-i18n="selectProject"></label><select id="dp_project"></select></div>
+      <div class="field"><label data-i18n="searchProject"></label><input type="text" id="dp_search_project" data-i18n-placeholder="searchProjectPlaceholder" /></div>
       <div class="field"><label data-i18n="drillTeamLabel"></label><select id="dp_team"><option value="">—</option></select></div>
     </div>
 
@@ -2175,7 +2199,7 @@ function renderDrillTeamPaymentView() {
       <div class="field-row">
         <div class="field"><label data-i18n="allowanceAmount"></label><input type="number" min="0" id="dp_allowance" value="" /></div>
         <div class="field" style="max-width:120px;"><label data-i18n="currency"></label>
-          <select id="dp_allowanceCurrency"><option value="VND">VND</option><option value="USD">USD</option></select>
+          <select id="dp_allowanceCurrency"><option value="USD">USD</option><option value="VND">VND</option></select>
         </div>
       </div>
     </div>
@@ -2210,12 +2234,14 @@ function renderDrillTeamPaymentView() {
   const repInput = document.getElementById("dp_rep");
 
   projSelect.innerHTML = projectsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
-  projSelect.addEventListener("change", () => loadProject(projSelect.value));
+  bindProjectSearchSelect(document.getElementById("dp_search_project"), projSelect, projectsCache);
+  projSelect.addEventListener("change", () => { localStorage.removeItem("dtp_lastTeam"); loadProject(projSelect.value); });
 
   teamSelect.addEventListener("change", async () => {
     selectedTeam = teamSelect.value;
     currentPaymentId = null;
-    if (!selectedTeam) { applyLoadedPayment(null); renderDynamic(); return; }
+    if (!selectedTeam) { applyLoadedPayment(null); renderDynamic(); localStorage.removeItem("dtp_lastTeam"); return; }
+    localStorage.setItem("dtp_lastTeam", selectedTeam);
     showSaveIndicator(true);
     const existing = await getOpenDrillTeamPayment(currentProject.id, selectedTeam);
     showSaveIndicator();
@@ -2234,7 +2260,7 @@ function renderDrillTeamPaymentView() {
   document.getElementById("dp_allowanceCurrency").addEventListener("change", (e) => { allowanceCurrency = e.target.value; renderSummary(); });
 
   document.getElementById("dp_addAdvance").addEventListener("click", () => {
-    advances.push({ date: dateKey(), amount: 0, currency: "VND", note: "" });
+    advances.push({ date: dateKey(), amount: 0, currency: "USD", note: "" });
     renderAdvancesTable();
     renderSummary();
   });
@@ -2259,14 +2285,14 @@ function renderDrillTeamPaymentView() {
   function applyLoadedPayment(payment) {
     currentPaymentId = payment ? payment.id : null;
     method = payment?.method || "contract";
-    soilRate = payment?.soilRate || 0; soilCurrency = payment?.soilCurrency || "VND";
-    rockRate = payment?.rockRate || 0; rockCurrency = payment?.rockCurrency || "VND";
+    soilRate = payment?.soilRate || 0; soilCurrency = payment?.soilCurrency || "USD";
+    rockRate = payment?.rockRate || 0; rockCurrency = payment?.rockCurrency || "USD";
     startDate = payment?.startDate || ""; endDate = payment?.endDate || "";
-    workerRate = payment?.workerRate || 0; workerCurrency = payment?.workerCurrency || "VND";
-    laborRate = payment?.laborRate || 0; laborCurrency = payment?.laborCurrency || "VND";
+    workerRate = payment?.workerRate || 0; workerCurrency = payment?.workerCurrency || "USD";
+    laborRate = payment?.laborRate || 0; laborCurrency = payment?.laborCurrency || "USD";
     workerCount = payment?.workerCount ?? 1; laborCount = payment?.laborCount ?? 1;
     dailyOverrides = payment?.dailyOverrides ? { ...payment.dailyOverrides } : {};
-    allowanceAmount = payment?.allowanceAmount || 0; allowanceCurrency = payment?.allowanceCurrency || "VND";
+    allowanceAmount = payment?.allowanceAmount || 0; allowanceCurrency = payment?.allowanceCurrency || "USD";
     advances = payment?.advances ? payment.advances.map((a) => ({ ...a })) : [];
     drillTeamRep = payment?.drillTeamRep || selectedTeam;
 
@@ -2326,11 +2352,11 @@ function renderDrillTeamPaymentView() {
       el.innerHTML = `
         <div class="field-row">
           <div class="field"><label data-i18n="soilRate"></label><input type="number" min="0" id="dp_soilRate" value="${soilRate || ""}" /></div>
-          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_soilCurrency"><option value="VND" ${soilCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${soilCurrency === "USD" ? "selected" : ""}>USD</option></select></div>
+          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_soilCurrency"><option value="USD" ${soilCurrency === "USD" ? "selected" : ""}>USD</option><option value="VND" ${soilCurrency === "VND" ? "selected" : ""}>VND</option></select></div>
         </div>
         <div class="field-row">
           <div class="field"><label data-i18n="rockRate"></label><input type="number" min="0" id="dp_rockRate" value="${rockRate || ""}" /></div>
-          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_rockCurrency"><option value="VND" ${rockCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${rockCurrency === "USD" ? "selected" : ""}>USD</option></select></div>
+          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_rockCurrency"><option value="USD" ${rockCurrency === "USD" ? "selected" : ""}>USD</option><option value="VND" ${rockCurrency === "VND" ? "selected" : ""}>VND</option></select></div>
         </div>
       `;
       applyI18n(el);
@@ -2341,17 +2367,17 @@ function renderDrillTeamPaymentView() {
     } else {
       el.innerHTML = `
         <div class="field-row">
-          <div class="field"><label data-i18n="startDate"></label><input type="date" id="dp_startDate" value="${startDate}" /></div>
-          <div class="field"><label data-i18n="endDate"></label><input type="date" id="dp_endDate" value="${endDate}" /></div>
+          <div class="field"><label data-i18n="startDate"></label><input type="date" id="dp_startDate" lang="vi" value="${startDate}" /></div>
+          <div class="field"><label data-i18n="endDate"></label><input type="date" id="dp_endDate" lang="vi" value="${endDate}" /></div>
         </div>
         <div class="field-row">
           <div class="field"><label data-i18n="workerRate"></label><input type="number" min="0" id="dp_workerRate" value="${workerRate || ""}" /></div>
-          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_workerCurrency"><option value="VND" ${workerCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${workerCurrency === "USD" ? "selected" : ""}>USD</option></select></div>
+          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_workerCurrency"><option value="USD" ${workerCurrency === "USD" ? "selected" : ""}>USD</option><option value="VND" ${workerCurrency === "VND" ? "selected" : ""}>VND</option></select></div>
           <div class="field" style="max-width:110px;"><label data-i18n="workerCount"></label><input type="number" min="0" step="1" id="dp_workerCount" value="${workerCount}" /></div>
         </div>
         <div class="field-row">
           <div class="field"><label data-i18n="laborRate"></label><input type="number" min="0" id="dp_laborRate" value="${laborRate || ""}" /></div>
-          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_laborCurrency"><option value="VND" ${laborCurrency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${laborCurrency === "USD" ? "selected" : ""}>USD</option></select></div>
+          <div class="field" style="max-width:120px;"><label data-i18n="currency"></label><select id="dp_laborCurrency"><option value="USD" ${laborCurrency === "USD" ? "selected" : ""}>USD</option><option value="VND" ${laborCurrency === "VND" ? "selected" : ""}>VND</option></select></div>
           <div class="field" style="max-width:110px;"><label data-i18n="laborCount"></label><input type="number" min="0" step="1" id="dp_laborCount" value="${laborCount}" /></div>
         </div>
         <div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div>
@@ -2437,7 +2463,7 @@ function renderDrillTeamPaymentView() {
       <thead><tr><th data-i18n="advanceDate"></th><th data-i18n="advanceAmount"></th><th data-i18n="currency"></th><th data-i18n="noteCol"></th><th></th></tr></thead>
       <tbody>
         ${advances.map((a, i) => `<tr data-idx="${i}">
-          <td><input type="date" class="dp-adv-date" value="${a.date}" /></td>
+          <td><input type="date" class="dp-adv-date" lang="vi" value="${a.date}" /></td>
           <td><input type="number" min="0" class="dp-adv-amount" value="${a.amount || ""}" style="width:100px;" /></td>
           <td><select class="dp-adv-currency"><option value="VND" ${a.currency === "VND" ? "selected" : ""}>VND</option><option value="USD" ${a.currency === "USD" ? "selected" : ""}>USD</option></select></td>
           <td><input type="text" class="dp-adv-note" value="${escapeAttr(a.note)}" /></td>
@@ -2472,17 +2498,38 @@ function renderDrillTeamPaymentView() {
 
   async function loadProject(pid) {
     cleanupProjectWatchers();
-    currentProject = await getProject(pid);
+    // Xóa NGAY danh sách đội khoan cũ (không chỉ reset giá trị) và khóa ô chọn
+    // lại trong lúc tải — tránh trường hợp người dùng lỡ chọn 1 đội khoan vẫn
+    // đang thuộc danh sách CŨ (của dự án trước) trong lúc dữ liệu mới chưa kịp
+    // về, dẫn tới không khớp được hố khoan / tiến độ đã lưu.
+    teamSelect.innerHTML = `<option value="">${t("loadingEllipsis")}</option>`;
+    teamSelect.disabled = true;
     selectedTeam = "";
-    teamSelect.value = "";
     currentPaymentId = null;
     applyLoadedPayment(null);
+    localStorage.setItem("dtp_lastProject", pid);
+    currentProject = await getProject(pid);
     const unsub = watchBoreholes(pid, (data) => {
       boreholes = data;
+      teamSelect.disabled = false;
       fillTeamSelect();
       renderDynamic();
+      maybeRestoreTeam();
     });
     currentProjectUnsubs.push(unsub);
+  }
+  // Khôi phục lại đội khoan đã chọn gần nhất cho dự án này (nếu còn hợp lệ),
+  // để khi rời tab rồi quay lại không phải chọn lại từ đầu và mất tiến độ.
+  let restoreAttempted = false;
+  function maybeRestoreTeam() {
+    if (restoreAttempted) return;
+    restoreAttempted = true;
+    const savedTeam = localStorage.getItem("dtp_lastTeam");
+    if (!savedTeam) return;
+    const teams = teamsList();
+    if (!teams.includes(savedTeam)) return;
+    teamSelect.value = savedTeam;
+    teamSelect.dispatchEvent(new Event("change"));
   }
 
   async function exportDrillTeamPaymentPdf() {
@@ -2520,11 +2567,16 @@ function renderDrillTeamPaymentView() {
     }
   }
 
-  // Khởi tạo lần đầu
+  // Khởi tạo lần đầu — khôi phục lại dự án đã chọn gần nhất (nếu còn tồn tại)
+  // để không phải chọn lại từ đầu khi rời tab rồi quay lại.
   renderMethodBody();
   renderAdvancesTable();
   renderSummary();
-  if (projectsCache.length) loadProject(projSelect.value);
+  if (projectsCache.length) {
+    const savedProjectId = localStorage.getItem("dtp_lastProject");
+    if (savedProjectId && projectsCache.some((p) => p.id === savedProjectId)) projSelect.value = savedProjectId;
+    loadProject(projSelect.value);
+  }
 }
 
 // ============================================================
@@ -3105,6 +3157,17 @@ function showSaveIndicator(saving = false) {
 // ============================================================
 // UTIL
 // ============================================================
+// Ô "Tìm kiếm dự án" dùng chung: lọc lại danh sách <option> của 1 <select> theo
+// tên khi gõ, giữ nguyên lựa chọn hiện tại nếu nó vẫn còn trong kết quả lọc.
+function bindProjectSearchSelect(searchInput, selectEl, projects) {
+  searchInput.addEventListener("input", () => {
+    const q = searchInput.value.trim().toLowerCase();
+    const filtered = q ? projects.filter((p) => (p.name || "").toLowerCase().includes(q)) : projects;
+    const prevVal = selectEl.value;
+    selectEl.innerHTML = filtered.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+    if (filtered.some((p) => p.id === prevVal)) selectEl.value = prevVal;
+  });
+}
 function escapeHtml(str) {
   return String(str ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

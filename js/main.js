@@ -1720,8 +1720,11 @@ function renderEquipmentView() {
     function fillItemSelect() {
       const cat = catSel.value;
       const q = searchInput.value.trim().toLowerCase();
+      // Vật tư thêm TRƯỚC khi có tính năng "Nhóm" (hoặc chưa gán nhóm) sẽ
+      // không bị ẩn mất khi đang lọc theo 1 nhóm cụ thể — chỉ loại những vật
+      // tư ĐÃ có nhóm rõ ràng nhưng khác với nhóm đang lọc.
       const filtered = materialsCache.filter((m) => {
-        if (cat && m.category !== cat) return false;
+        if (cat && m.category && m.category !== cat) return false;
         if (!q) return true;
         return (m.name || "").toLowerCase().includes(q) || (m.spec || "").toLowerCase().includes(q);
       }).sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { numeric: true, sensitivity: "base" }));
@@ -1734,7 +1737,17 @@ function renderEquipmentView() {
     catSel.addEventListener("change", fillItemSelect);
     searchInput.addEventListener("input", fillItemSelect);
     itemSel.addEventListener("change", updateItemDependentFields);
-    getMaterialsOnce().then((mats) => { materialsCache = mats; fillItemSelect(); });
+    itemSel.innerHTML = `<option value="">${t("loadingEllipsis")}</option>`;
+    itemSel.disabled = true;
+    getMaterialsOnce().then((mats) => {
+      materialsCache = mats;
+      itemSel.disabled = false;
+      fillItemSelect();
+    }).catch((e) => {
+      itemSel.disabled = false;
+      itemSel.innerHTML = `<option value="">${t("customInput")}</option>`;
+      console.warn("failed to load materials", e);
+    });
 
     function renderDraftTable() {
       const el = document.getElementById("eq_draftTable");
@@ -1990,8 +2003,10 @@ function renderEquipmentView() {
       const el = document.getElementById("cs_list");
       if (!el) return;
       const dKey = dateInput.value || dateKey();
-      if (!items.length) { el.innerHTML = `<div class="empty-state">${t("noConsumables")}</div>`; return; }
-      el.innerHTML = `<div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div><div class="table-scroll"><table class="simple-table">
+      if (!items.length) { el.innerHTML = `<div class="card"><div class="empty-state">${t("noConsumables")}</div></div>`; return; }
+      el.innerHTML = `<div class="card">
+        <h3 data-i18n="consumablesListTitle"></h3>
+        <div class="table-scroll consumables-table-wrap"><table class="simple-table consumables-table">
         <thead><tr><th data-i18n="materialName"></th><th data-i18n="unitLabel"></th><th data-i18n="quantity"></th><th data-i18n="remainingQty"></th>${canEdit() ? "<th></th>" : ""}</tr></thead>
         <tbody>
           ${items.map((it) => {
@@ -1999,15 +2014,15 @@ function renderEquipmentView() {
             const totalConsumed = Object.values(it.dailyLog || {}).reduce((s, v) => s + (Number(v) || 0), 0);
             const remaining = it.issuedQty != null ? (Number(it.issuedQty) - totalConsumed) : null;
             return `<tr data-id="${it.id}">
-              <td>${escapeHtml(it.name)}</td>
-              <td>${escapeHtml(it.unit || "—")}</td>
-              <td><input type="number" min="0" class="cs-qty" value="${qty ?? ""}" ${canEdit() ? "" : "disabled"} style="width:90px;" /></td>
-              <td class="num">${remaining != null ? remaining : "—"}</td>
-              ${canEdit() ? `<td><button type="button" class="btn btn-ghost btn-sm cs-remove">✕</button></td>` : ""}
+              <td data-label="${t("materialName")}">${escapeHtml(it.name)}</td>
+              <td data-label="${t("unitLabel")}">${escapeHtml(it.unit || "—")}</td>
+              <td data-label="${t("quantity")}"><input type="number" min="0" class="cs-qty" value="${qty ?? ""}" ${canEdit() ? "" : "disabled"} style="width:90px;" /></td>
+              <td data-label="${t("remainingQty")}" class="num">${remaining != null ? remaining : "—"}</td>
+              ${canEdit() ? `<td data-label=""><button type="button" class="btn btn-ghost btn-sm cs-remove">✕</button></td>` : ""}
             </tr>`;
           }).join("")}
         </tbody>
-      </table></div>`;
+      </table></div></div>`;
       applyI18n(el);
       el.querySelectorAll("tr[data-id]").forEach((row) => {
         const id = row.dataset.id;

@@ -940,7 +940,8 @@ export function buildDrillTeamPaymentPdfHTML({
       : [dtpMoney(totalWorkerMoney, workerCurrency), dtpMoney(totalLaborMoney, laborCurrency)];
   }
 
-  const advanceRows = (advances || []).map((a) => `<tr>
+  const sortedAdvances = [...(advances || [])].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const advanceRows = sortedAdvances.map((a) => `<tr>
       <td>${a.date ? a.date.split("-").reverse().join("/") : "—"}</td>
       <td class="num">${dtpMoney(a.amount, a.currency)}</td>
       <td>${escapeHtml(a.note || "—")}</td>

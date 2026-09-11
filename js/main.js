@@ -14,7 +14,7 @@ import {
   getEquipmentLogsOnce, updateEquipmentLogItemRemaining,
   watchConsumables, addConsumableItem, updateConsumableDay, deleteConsumableItem,
   watchMaterials, getMaterialsOnce, addMaterial, updateMaterial, deleteMaterial,
-  watchOpenDrillTeamPayment, getOpenDrillTeamPayment, saveDrillTeamPaymentProgress, finalizeDrillTeamPayment,
+  watchDrillTeamPayments, watchOpenDrillTeamPayment, getOpenDrillTeamPayment, saveDrillTeamPaymentProgress, finalizeDrillTeamPayment,
 } from "./store.js";
 import { applyI18n, getLang, setLang, t } from "./i18n.js";
 import { initTheme, toggleTheme, getTheme, applyTheme } from "./theme.js";
@@ -2195,9 +2195,15 @@ function renderDrillTeamPaymentView() {
     </div>
 
     <div class="card">
+      <h3 data-i18n="savedSheetsTitle"></h3>
+      <div id="dp_savedSheets"></div>
+    </div>
+
+    <div class="card">
       <h3 data-i18n="completedBoreholesTitle"></h3>
       <div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div>
       <div class="table-scroll"><table class="simple-table dtp-table" id="dp_boreholesTable"></table></div>
+      <div id="dp_boreholesMismatchNote"></div>
     </div>
 
     <div class="card">
@@ -2348,6 +2354,7 @@ function renderDrillTeamPaymentView() {
 
   function renderBoreholesTable() {
     const el = document.getElementById("dp_boreholesTable");
+    const noteEl = document.getElementById("dp_boreholesMismatchNote");
     const mb = matchedBoreholes();
     const totalSoilM = mb.reduce((s, b) => s + (Number(b.soilM) || 0), 0);
     const totalRockM = mb.reduce((s, b) => s + (Number(b.rockM) || 0), 0);
@@ -2359,6 +2366,23 @@ function renderDrillTeamPaymentView() {
       ${mb.length ? `<tfoot><tr class="dtp-total-row"><td>${t("total")}</td><td class="num">${totalSoilM}</td><td class="num">${totalRockM}</td><td class="num">${totalSoilM + totalRockM}</td></tr></tfoot>` : ""}
     `;
     applyI18n(el);
+
+    // Không có hố khoan nào khớp đội khoan đang chọn — nếu dự án có hố khoan đã
+    // hoàn thành thuộc đội khoan KHÁC (hoặc chưa gán đội khoan), hiện rõ ra để
+    // người dùng tự kiểm tra/đối chiếu trước khi xuất PDF, thay vì báo trống trơn.
+    if (!mb.length && selectedTeam) {
+      const otherCompleted = boreholes.filter((b) => dtpBoreholePct(b) >= 100 && b.team !== selectedTeam);
+      if (otherCompleted.length) {
+        noteEl.innerHTML = `
+          <div class="hint-note">⚠ ${t("completedButNoTeamMatch")}</div>
+          <div class="table-scroll"><table class="simple-table">
+            <thead><tr><th>${t("boreholeName")}</th><th>${t("totalM")}</th><th>${t("drillTeamLabel")}</th></tr></thead>
+            <tbody>${otherCompleted.map((b) => `<tr><td>${escapeHtml(b.name || "—")}</td><td class="num">${(Number(b.soilM) || 0) + (Number(b.rockM) || 0)}</td><td>${escapeHtml(b.team || t("noTeamAssigned"))}</td></tr>`).join("")}</tbody>
+          </table></div>`;
+        return;
+      }
+    }
+    noteEl.innerHTML = "";
   }
 
   function renderMethodBody() {
@@ -2532,6 +2556,39 @@ function renderDrillTeamPaymentView() {
       maybeRestoreTeam();
     });
     currentProjectUnsubs.push(unsub);
+    const unsubSheets = watchDrillTeamPayments(pid, (sheets) => { renderSavedSheets(sheets); });
+    currentProjectUnsubs.push(unsubSheets);
+  }
+  // Danh sách TẤT CẢ các phiếu khối lượng đã lưu của dự án (mọi đội khoan, cả
+  // đang mở lẫn đã hoàn thành) — bấm "Mở" để nạp lại và cập nhật tiếp, đồng
+  // thời đây cũng là bằng chứng trực quan rằng "Lưu tiến độ" đã lưu thành công.
+  function renderSavedSheets(sheets) {
+    const el = document.getElementById("dp_savedSheets");
+    if (!el) return;
+    if (!sheets.length) { el.innerHTML = `<div class="empty-state">${t("noSavedSheets")}</div>`; return; }
+    el.innerHTML = sheets.map((s) => {
+      const updated = s.updatedAt?.toDate ? s.updatedAt.toDate() : (s.createdAt?.toDate ? s.createdAt.toDate() : null);
+      const timeStr = updated ? updated.toLocaleString(getLang() === "vi" ? "vi-VN" : "en-US") : "—";
+      const statusLabel = s.status === "completed" ? t("sheetStatusCompleted") : t("sheetStatusOpen");
+      return `<div class="dtp-sheet-row" data-id="${s.id}">
+        <div class="dtp-sheet-info">
+          <span class="dtp-sheet-team">${escapeHtml(s.team || "—")}</span>
+          <span class="badge ${s.status === "completed" ? "st-done" : "st-progress"}">${statusLabel}</span>
+          <span class="dtp-sheet-meta">${s.method === "daily" ? t("methodDaily") : t("methodContract")} · ${timeStr}</span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm dtp-sheet-open">${t("openSheet")}</button>
+      </div>`;
+    }).join("");
+    el.querySelectorAll(".dtp-sheet-row").forEach((row) => {
+      const sheet = sheets.find((s) => s.id === row.dataset.id);
+      row.querySelector(".dtp-sheet-open").addEventListener("click", () => {
+        selectedTeam = sheet.team || "";
+        teamSelect.value = selectedTeam;
+        localStorage.setItem("dtp_lastTeam", selectedTeam);
+        applyLoadedPayment(sheet);
+        renderDynamic();
+      });
+    });
   }
   // Khôi phục lại đội khoan đã chọn gần nhất cho dự án này (nếu còn hợp lệ),
   // để khi rời tab rồi quay lại không phải chọn lại từ đầu và mất tiến độ.

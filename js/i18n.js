@@ -258,6 +258,8 @@ export const dict = {
     drillTeamLabel: "Đội khoan",
     completedBoreholesTitle: "Hố khoan đã hoàn thành",
     noCompletedBoreholes: "Chưa có hố khoan nào hoàn thành cho đội khoan này.",
+    completedButNoTeamMatch: "Dự án này có hố khoan đã hoàn thành, nhưng thuộc đội khoan khác (hoặc chưa gán đội khoan) — không tính vào đội khoan đang chọn. Kiểm tra lại bên dưới, hoặc vào \"Dự án hiện tại\" sửa lại đội khoan của hố khoan cho đúng.",
+    noTeamAssigned: "Chưa gán đội khoan",
     totalM: "Tổng mét",
     dateCol: "Ngày",
     days: "ngày",
@@ -295,6 +297,11 @@ export const dict = {
     saveProgress: "💾 Lưu tiến độ",
     progressSavedNote: "Phiếu đang mở — có thể quay lại cập nhật thêm bất cứ lúc nào trước khi xuất PDF.",
     notSavedYetNote: "Chưa lưu lần nào — nhấn \"Lưu tiến độ\" để lưu lại, có thể cập nhật thêm sau.",
+    savedSheetsTitle: "Các phiếu đã lưu (dự án này)",
+    noSavedSheets: "Chưa có phiếu khối lượng nào được lưu cho dự án này.",
+    sheetStatusCompleted: "Đã hoàn thành",
+    sheetStatusOpen: "Đang mở",
+    openSheet: "Mở →",
     selectTeamFirst: "Vui lòng chọn đội khoan trước.",
 
     // Vật tư tiêu hao (Consumables) + tabs trong Xuất/Nhập thiết bị
@@ -612,6 +619,8 @@ export const dict = {
     drillTeamLabel: "Drill Team",
     completedBoreholesTitle: "Completed Boreholes",
     noCompletedBoreholes: "No completed boreholes for this drill team yet.",
+    completedButNoTeamMatch: "This project has completed boreholes, but they belong to a different drill team (or have no team assigned) — they're not counted for the currently selected team. Check the list below, or edit the borehole's team under \"Current Projects\".",
+    noTeamAssigned: "No team assigned",
     totalM: "Total (m)",
     dateCol: "Date",
     days: "days",
@@ -649,6 +658,11 @@ export const dict = {
     saveProgress: "💾 Save Progress",
     progressSavedNote: "Sheet is open — you can come back and update it anytime before exporting the PDF.",
     notSavedYetNote: "Not saved yet — click \"Save Progress\" to save; you can keep updating it later.",
+    savedSheetsTitle: "Saved Sheets (this project)",
+    noSavedSheets: "No payment sheets saved for this project yet.",
+    sheetStatusCompleted: "Completed",
+    sheetStatusOpen: "Open",
+    openSheet: "Open →",
     selectTeamFirst: "Please select a drill team first.",
 
     // Vật tư tiêu hao (Consumables) + tabs trong Xuất/Nhập thiết bị

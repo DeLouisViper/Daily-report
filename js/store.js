@@ -413,15 +413,23 @@ export async function getOpenDrillTeamPayment(projectId, team) {
 // Lưu tiến độ (không đánh dấu hoàn thành) — tạo phiếu mới nếu chưa có, hoặc
 // cập nhật phiếu đang mở đã có.
 export async function saveDrillTeamPaymentProgress(projectId, id, data, user) {
-  if (id) {
-    await updateDoc(doc(db, "projects", projectId, "drillTeamPayments", id), {
+  let targetId = id;
+  if (!targetId) {
+    // Phòng trường hợp phiếu "đang mở" của cùng đội khoan chưa kịp nạp vào form
+    // (VD do lỗi mạng lúc chọn đội khoan) — tái sử dụng phiếu đó thay vì tạo
+    // mới, tránh sinh ra nhiều phiếu trùng nhau cho cùng 1 đội khoan.
+    const existing = await getOpenDrillTeamPayment(projectId, data.team);
+    if (existing) targetId = existing.id;
+  }
+  if (targetId) {
+    await updateDoc(doc(db, "projects", projectId, "drillTeamPayments", targetId), {
       ...data,
       status: "open",
       updatedAt: serverTimestamp(),
       updatedBy: user?.name || user?.email || "—",
     });
     await logActivity(projectId, user, "updated", `Bảng khối lượng đội khoan (${data.team || "—"})`);
-    return id;
+    return targetId;
   }
   const ref = await addDoc(collection(db, "projects", projectId, "drillTeamPayments"), {
     ...data,
@@ -439,6 +447,10 @@ export async function finalizeDrillTeamPayment(projectId, id, data, user) {
   await updateDoc(doc(db, "projects", projectId, "drillTeamPayments", finalId), { status: "completed" });
   await logActivity(projectId, user, "updated", `Hoàn thành bảng khối lượng đội khoan (${data.team || "—"})`);
   return finalId;
+}
+export async function deleteDrillTeamPayment(projectId, id, user, team) {
+  await deleteDoc(doc(db, "projects", projectId, "drillTeamPayments", id));
+  await logActivity(projectId, user, "deleted", `Bảng khối lượng đội khoan (${team || "—"})`);
 }
 
 // ---------- Helpers ----------

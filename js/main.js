@@ -14,7 +14,7 @@ import {
   getEquipmentLogsOnce, updateEquipmentLogItemRemaining,
   watchConsumables, addConsumableItem, updateConsumableDay, deleteConsumableItem,
   watchMaterials, getMaterialsOnce, addMaterial, updateMaterial, deleteMaterial,
-  watchDrillTeamPayments, watchOpenDrillTeamPayment, getOpenDrillTeamPayment, saveDrillTeamPaymentProgress, finalizeDrillTeamPayment,
+  watchDrillTeamPayments, watchOpenDrillTeamPayment, getOpenDrillTeamPayment, saveDrillTeamPaymentProgress, finalizeDrillTeamPayment, deleteDrillTeamPayment,
 } from "./store.js";
 import { applyI18n, getLang, setLang, t } from "./i18n.js";
 import { initTheme, toggleTheme, getTheme, applyTheme } from "./theme.js";
@@ -2576,7 +2576,10 @@ function renderDrillTeamPaymentView() {
           <span class="badge ${s.status === "completed" ? "st-done" : "st-progress"}">${statusLabel}</span>
           <span class="dtp-sheet-meta">${s.method === "daily" ? t("methodDaily") : t("methodContract")} · ${timeStr}</span>
         </div>
-        <button type="button" class="btn btn-ghost btn-sm dtp-sheet-open">${t("openSheet")}</button>
+        <div class="dtp-sheet-actions">
+          <button type="button" class="btn btn-ghost btn-sm dtp-sheet-open">${t("openSheet")}</button>
+          ${isAdmin() ? `<button type="button" class="btn btn-danger btn-sm dtp-sheet-delete">${t("delete")}</button>` : ""}
+        </div>
       </div>`;
     }).join("");
     el.querySelectorAll(".dtp-sheet-row").forEach((row) => {
@@ -2587,6 +2590,15 @@ function renderDrillTeamPaymentView() {
         localStorage.setItem("dtp_lastTeam", selectedTeam);
         applyLoadedPayment(sheet);
         renderDynamic();
+      });
+      const delBtn = row.querySelector(".dtp-sheet-delete");
+      if (delBtn) delBtn.addEventListener("click", async () => {
+        if (await showConfirmModal(t("deleteSheetConfirm"))) {
+          showSaveIndicator(true);
+          await deleteDrillTeamPayment(currentProject.id, sheet.id, CURRENT_USER, sheet.team);
+          if (currentPaymentId === sheet.id) { currentPaymentId = null; applyLoadedPayment(null); }
+          showSaveIndicator();
+        }
       });
     });
   }

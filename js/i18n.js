@@ -302,6 +302,7 @@ export const dict = {
     sheetStatusCompleted: "Đã hoàn thành",
     sheetStatusOpen: "Đang mở",
     openSheet: "Mở →",
+    deleteSheetConfirm: "Bạn có chắc muốn xóa phiếu khối lượng này? Không thể hoàn tác.",
     selectTeamFirst: "Vui lòng chọn đội khoan trước.",
 
     // Vật tư tiêu hao (Consumables) + tabs trong Xuất/Nhập thiết bị
@@ -663,6 +664,7 @@ export const dict = {
     sheetStatusCompleted: "Completed",
     sheetStatusOpen: "Open",
     openSheet: "Open →",
+    deleteSheetConfirm: "Are you sure you want to delete this payment sheet? This cannot be undone.",
     selectTeamFirst: "Please select a drill team first.",
 
     // Vật tư tiêu hao (Consumables) + tabs trong Xuất/Nhập thiết bị

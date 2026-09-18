@@ -1701,6 +1701,7 @@ function renderEquipmentView() {
       </div>
       <div class="card">
         <h3 data-i18n="draftListTitle"></h3>
+        <div class="field"><input type="text" id="eq_draftSearch" data-i18n-placeholder="searchInListPlaceholder" /></div>
         <div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div>
         <div id="eq_draftTable" class="table-scroll"></div>
         <button class="btn btn-primary" id="eq_save" data-i18n="saveCheckout"></button>
@@ -1751,11 +1752,17 @@ function renderEquipmentView() {
 
     function renderDraftTable() {
       const el = document.getElementById("eq_draftTable");
+      const draftSearch = document.getElementById("eq_draftSearch");
+      const q = draftSearch ? draftSearch.value.trim().toLowerCase() : "";
+      const visible = draftItems
+        .map((it, i) => ({ it, i }))
+        .filter(({ it }) => !q || it.name.toLowerCase().includes(q) || (it.spec || "").toLowerCase().includes(q));
       if (!draftItems.length) { el.innerHTML = `<div class="empty-state">${t("draftListEmpty")}</div>`; return; }
+      if (!visible.length) { el.innerHTML = `<div class="empty-state">${t("noSearchResults")}</div>`; return; }
       el.innerHTML = `<table class="simple-table"><thead><tr>
         <th data-i18n="equipmentName"></th><th data-i18n="specColumn"></th><th data-i18n="quantity"></th><th></th>
       </tr></thead><tbody>
-      ${draftItems.map((it, i) => `<tr>
+      ${visible.map(({ it, i }) => `<tr>
         <td>${escapeHtml(it.name)}</td>
         <td>${escapeHtml(it.spec || "—")}</td>
         <td><input type="number" min="0" class="draft-qty" data-idx="${i}" value="${it.qty}" style="width:70px;" /></td>
@@ -1770,6 +1777,7 @@ function renderEquipmentView() {
         btn.addEventListener("click", () => { draftItems.splice(+btn.dataset.idx, 1); renderDraftTable(); });
       });
     }
+    document.getElementById("eq_draftSearch").addEventListener("input", renderDraftTable);
     renderDraftTable();
 
     document.getElementById("eq_add").addEventListener("click", () => {
@@ -1827,6 +1835,7 @@ function renderEquipmentView() {
       <button class="btn btn-ghost btn-sm" id="eq_back2" data-i18n="backToList"></button>
       <div class="card">
         <h3 data-i18n="checkinTitle"></h3>
+        <div class="field"><input type="text" id="eq_checkinSearch" data-i18n-placeholder="searchInListPlaceholder" /></div>
         <div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div>
         <div class="table-scroll"><table class="simple-table">
           <thead><tr>
@@ -1856,6 +1865,14 @@ function renderEquipmentView() {
     `;
     bindTopbar();
     document.getElementById("eq_back2").addEventListener("click", () => { mode = "list"; render(); });
+    document.getElementById("eq_checkinSearch").addEventListener("input", (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      document.querySelectorAll("#eq_checkinBody tr").forEach((row) => {
+        const name = row.children[0]?.textContent.toLowerCase() || "";
+        const spec = row.children[1]?.textContent.toLowerCase() || "";
+        row.style.display = !q || name.includes(q) || spec.includes(q) ? "" : "none";
+      });
+    });
     document.getElementById("eq_saveCheckin").addEventListener("click", async () => {
       const rows = [...document.querySelectorAll("#eq_checkinBody tr")];
       const checkinItems = rows.map((row) => {
@@ -1902,6 +1919,7 @@ function renderEquipmentView() {
       ${canEdit() ? `
       <div class="card">
         <h3 data-i18n="fromCheckoutTitle"></h3>
+        <div class="field"><input type="text" id="cs_fromCheckoutSearch" data-i18n-placeholder="searchInListPlaceholder" /></div>
         <div id="cs_fromCheckout"></div>
       </div>
       <div class="card">
@@ -1913,6 +1931,7 @@ function renderEquipmentView() {
         </div>
         <button class="btn btn-primary btn-sm" id="cs_add" data-i18n="addItem"></button>
       </div>` : ""}
+      <div class="field"><input type="text" id="cs_listSearch" data-i18n-placeholder="searchInListPlaceholder" /></div>
       <div id="cs_list"></div>
     `;
     bindTopbar();
@@ -1972,7 +1991,7 @@ function renderEquipmentView() {
       const el = document.getElementById("cs_fromCheckout");
       if (!el) return;
       const tracked = new Set(items.filter((it) => it.sourceLogId).map((it) => `${it.sourceLogId}|${it.sourceItemIndex}`));
-      const available = [];
+      let available = [];
       checkoutLogs.forEach((log) => {
         (log.items || []).forEach((it, idx) => {
           const key = `${log.id}|${idx}`;
@@ -1980,7 +1999,10 @@ function renderEquipmentView() {
           available.push({ logId: log.id, itemIndex: idx, name: equipItemLabel(it), unit: it.spec || "", issuedQty: it.qty });
         });
       });
-      if (!available.length) { el.innerHTML = `<div class="empty-state">${t("noAvailableFromCheckout")}</div>`; return; }
+      const searchEl = document.getElementById("cs_fromCheckoutSearch");
+      const q = searchEl ? searchEl.value.trim().toLowerCase() : "";
+      if (q) available = available.filter((a) => a.name.toLowerCase().includes(q));
+      if (!available.length) { el.innerHTML = `<div class="empty-state">${t(q ? "noSearchResults" : "noAvailableFromCheckout")}</div>`; return; }
       el.innerHTML = available.map((a, i) => `
         <div class="cs-avail-row" data-i="${i}">
           <span class="cs-avail-name">${escapeHtml(a.name)}</span>
@@ -1998,18 +2020,24 @@ function renderEquipmentView() {
         });
       });
     }
+    const fromCheckoutSearchEl = document.getElementById("cs_fromCheckoutSearch");
+    if (fromCheckoutSearchEl) fromCheckoutSearchEl.addEventListener("input", renderFromCheckout);
 
     function renderList() {
       const el = document.getElementById("cs_list");
       if (!el) return;
       const dKey = dateInput.value || dateKey();
       if (!items.length) { el.innerHTML = `<div class="card"><div class="empty-state">${t("noConsumables")}</div></div>`; return; }
+      const listSearchEl = document.getElementById("cs_listSearch");
+      const q = listSearchEl ? listSearchEl.value.trim().toLowerCase() : "";
+      const visible = q ? items.filter((it) => (it.name || "").toLowerCase().includes(q)) : items;
+      if (!visible.length) { el.innerHTML = `<div class="card"><div class="empty-state">${t("noSearchResults")}</div></div>`; return; }
       el.innerHTML = `<div class="card">
         <h3 data-i18n="consumablesListTitle"></h3>
         <div class="table-scroll consumables-table-wrap"><table class="simple-table consumables-table">
         <thead><tr><th data-i18n="materialName"></th><th data-i18n="unitLabel"></th><th data-i18n="quantity"></th><th data-i18n="remainingQty"></th>${canEdit() ? "<th></th>" : ""}</tr></thead>
         <tbody>
-          ${items.map((it) => {
+          ${visible.map((it) => {
             const qty = (it.dailyLog || {})[dKey];
             const totalConsumed = Object.values(it.dailyLog || {}).reduce((s, v) => s + (Number(v) || 0), 0);
             const remaining = it.issuedQty != null ? (Number(it.issuedQty) - totalConsumed) : null;
@@ -2044,6 +2072,7 @@ function renderEquipmentView() {
         });
       });
     }
+    document.getElementById("cs_listSearch").addEventListener("input", renderList);
 
     function loadProject(pid) {
       cleanupProjectWatchers();

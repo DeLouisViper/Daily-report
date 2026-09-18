@@ -271,6 +271,28 @@ export async function getLatestEquipmentLog(projectId) {
   const d = snap.docs[0];
   return { id: d.id, ...d.data() };
 }
+function equipItemDisplayLabel(it) {
+  const name = it.name || it.customName || "—";
+  return it.spec ? `${name} — ${it.spec}` : name;
+}
+// Khi sửa số lượng trong phiếu xuất kho, các vật tư tiêu hao đang "theo dõi"
+// mục đó (sourceLogId trỏ về phiếu này) cần được cập nhật lại "Đã xuất" ngay,
+// không bắt người dùng phải xóa rồi thêm lại mới thấy số mới.
+async function syncConsumablesIssuedQty(projectId, logId, items) {
+  const snap = await getDocs(query(collection(db, "projects", projectId, "consumables"), where("sourceLogId", "==", logId)));
+  const updates = [];
+  snap.docs.forEach((d) => {
+    const c = d.data();
+    // Khớp theo tên hiển thị (ổn định hơn theo vị trí/index, vì index có thể
+    // lệch nếu người dùng thêm/bớt dòng khi sửa lại phiếu xuất kho).
+    let match = items.find((it) => equipItemDisplayLabel(it) === c.name);
+    if (!match && c.sourceItemIndex != null && items[c.sourceItemIndex]) match = items[c.sourceItemIndex];
+    if (match && Number(match.qty) !== Number(c.issuedQty)) {
+      updates.push(updateDoc(doc(db, "projects", projectId, "consumables", d.id), { issuedQty: Number(match.qty) || 0 }));
+    }
+  });
+  if (updates.length) await Promise.all(updates);
+}
 export async function createEquipmentCheckout(projectId, items, user) {
   const ref = await addDoc(collection(db, "projects", projectId, "equipmentLogs"), {
     items,
@@ -284,6 +306,11 @@ export async function createEquipmentCheckout(projectId, items, user) {
 export async function updateEquipmentCheckout(projectId, logId, items, user) {
   await updateDoc(doc(db, "projects", projectId, "equipmentLogs", logId), { items });
   await logActivity(projectId, user, "updated", `Xuất kho thiết bị (${items.length} mục)`);
+  try {
+    await syncConsumablesIssuedQty(projectId, logId, items);
+  } catch (e) {
+    console.warn("failed to sync consumables issuedQty", e);
+  }
 }
 export async function saveEquipmentCheckin(projectId, logId, checkinItems, user) {
   await updateDoc(doc(db, "projects", projectId, "equipmentLogs", logId), {

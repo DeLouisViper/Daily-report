@@ -2016,12 +2016,13 @@ function renderEquipmentView() {
     function renderFromCheckout() {
       const el = document.getElementById("cs_fromCheckout");
       if (!el) return;
-      const tracked = new Set(items.filter((it) => it.sourceLogId).map((it) => `${it.sourceLogId}|${it.sourceItemIndex}`));
+      // Nhận diện mục đã theo dõi theo (phiếu + tên hiển thị), không theo vị trí,
+      // vì vị trí đổi khi sửa phiếu xuất kho (thêm/bớt dòng).
+      const tracked = new Set(items.filter((it) => it.sourceLogId).map((it) => `${it.sourceLogId}|${it.name}`));
       let available = [];
       checkoutLogs.forEach((log) => {
         (log.items || []).forEach((it, idx) => {
-          const key = `${log.id}|${idx}`;
-          if (tracked.has(key)) return;
+          if (tracked.has(`${log.id}|${equipItemLabel(it)}`)) return;
           available.push({ logId: log.id, itemIndex: idx, name: equipItemLabel(it), unit: it.spec || "", issuedQty: it.qty });
         });
       });
@@ -2104,8 +2105,10 @@ function renderEquipmentView() {
       cleanupProjectWatchers();
       (async () => {
         currentProject = await getProject(pid);
-        checkoutLogs = await getEquipmentLogsOnce(pid);
-        renderFromCheckout();
+        // Theo dõi phiếu xuất kho theo thời gian thực: thêm vật tư / đổi số
+        // lượng ở tab Xuất/Nhập kho sẽ tự cập nhật ngay ở đây.
+        const unsubLogs = watchEquipmentLogs(pid, (data) => { checkoutLogs = data; renderFromCheckout(); renderList(); });
+        currentProjectUnsubs.push(unsubLogs);
         const unsub = watchConsumables(pid, (data) => { items = data; renderFromCheckout(); renderList(); });
         currentProjectUnsubs.push(unsub);
       })();

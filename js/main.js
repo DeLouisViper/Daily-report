@@ -1065,6 +1065,14 @@ const REPAIR_ITEM_OPTIONS = [
   "Hỏng co nối / Valve broken",
   "Hỏng tời / Winch broken",
   "Hỏng ống khoan / Drilling tube broken",
+  "Hỏng đầu bò / Machine Front broken",
+  "Hỏng hộp số chính / Main gear box broken",
+  "Hỏng hệ thống thủy lực / Hydraulic system broken",
+  "Hỏng tháp khoan / Tower broken",
+  "Hỏng ống SPT / SPT tube broken",
+  "Hết nhớt thủy lực / Out of hydraulic oil",
+  "Hết nhớt máy / Out of machine oil",
+  "Hết nhớt hộp số / Out of gear box oil",
 ];
 
 const DRILL_LOG_FIELDS = [
@@ -1144,11 +1152,12 @@ function renderDrillLogView() {
   // bất kỳ được focus, ta hoãn việc vẽ lại danh sách cho đến khi rời khỏi ô đó.
   let pendingRerender = false;
   function isTimeInput(el) { return !!el && el.tagName === "INPUT" && el.type === "time"; }
+  function isRepairPanelOpen() { return !!document.querySelector("#dl_container .ms-panel:not(.hidden)"); }
   function loadMachines(pid) {
     const unsub = watchDrillingMachines(pid, (machines) => {
       currentMachines = machines;
       fillMachineFilter();
-      if (isTimeInput(document.activeElement)) {
+      if (isTimeInput(document.activeElement) || isRepairPanelOpen()) {
         pendingRerender = true;
         return;
       }
@@ -1161,6 +1170,14 @@ function renderDrillLogView() {
       pendingRerender = false;
       renderCards();
     }
+  });
+  document.getElementById("dl_container").addEventListener("click", () => {
+    setTimeout(() => {
+      if (pendingRerender && !isRepairPanelOpen() && !isTimeInput(document.activeElement)) {
+        pendingRerender = false;
+        renderCards();
+      }
+    }, 0);
   });
   async function loadProject(pid) {
     cleanupProjectWatchers();
@@ -1349,24 +1366,33 @@ function bindRepairItemField(wrap) {
     return combined;
   }
   function commit() { hidden.dispatchEvent(new Event("change")); }
+  // Chỉ LƯU khi đóng bảng chọn (Xong / bấm lại nút mở) — không lưu ngay lúc đang
+  // tích chọn, vì lưu xong Firestore báo thay đổi làm vẽ lại cả thẻ máy khoan,
+  // khiến bảng chọn và ô "Tự nhập" bị đóng ngay lập tức.
+  function closePanel() {
+    if (panel.classList.contains("hidden")) return;
+    recompute();
+    panel.classList.add("hidden");
+    commit();
+  }
 
-  toggleBtn.addEventListener("click", () => panel.classList.toggle("hidden"));
+  toggleBtn.addEventListener("click", () => {
+    if (panel.classList.contains("hidden")) panel.classList.remove("hidden");
+    else closePanel();
+  });
   wrap.querySelectorAll(".ms-opt-cb").forEach((cb) => {
-    cb.addEventListener("change", () => { recompute(); commit(); });
+    cb.addEventListener("change", recompute);
   });
   if (manualCb) {
     manualCb.addEventListener("change", () => {
       manualText.classList.toggle("hidden", !manualCb.checked);
       if (manualCb.checked) manualText.focus();
-      recompute(); commit();
+      recompute();
     });
   }
-  if (manualText) {
-    manualText.addEventListener("input", recompute);
-    manualText.addEventListener("change", commit);
-  }
+  if (manualText) manualText.addEventListener("input", recompute);
   const doneBtn = wrap.querySelector(".ms-done");
-  if (doneBtn) doneBtn.addEventListener("click", () => panel.classList.add("hidden"));
+  if (doneBtn) doneBtn.addEventListener("click", closePanel);
 }
 
 function drillMachineCardHtml(m, dKey) {
@@ -3272,14 +3298,79 @@ function showSaveIndicator(saving = false) {
 // ============================================================
 // Ô "Tìm kiếm dự án" dùng chung: lọc lại danh sách <option> của 1 <select> theo
 // tên khi gõ, giữ nguyên lựa chọn hiện tại nếu nó vẫn còn trong kết quả lọc.
-function bindProjectSearchSelect(searchInput, selectEl, projects) {
-  searchInput.addEventListener("input", () => {
-    const q = searchInput.value.trim().toLowerCase();
-    const filtered = q ? projects.filter((p) => (p.name || "").toLowerCase().includes(q)) : projects;
-    const prevVal = selectEl.value;
-    selectEl.innerHTML = filtered.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
-    if (filtered.some((p) => p.id === prevVal)) selectEl.value = prevVal;
+function bindProjectSearchSelect(searchInput, selectEl) {
+  const field = searchInput.closest(".field") || searchInput.parentElement;
+  field.classList.add("ps-field");
+  searchInput.setAttribute("autocomplete", "off");
+  const list = document.createElement("div");
+  list.className = "ps-list hidden";
+  field.appendChild(list);
+  let activeIdx = -1;
+  let visible = [];
+
+  // Luôn đọc danh sách dự án trực tiếp từ <select> (không lọc <select>), nên
+  // luôn đúng dù danh sách dự án được nạp muộn hơn lúc gắn ô tìm kiếm.
+  const allProjects = () => [...selectEl.options].map((o) => ({ id: o.value, name: o.textContent }));
+
+  function render(filterText) {
+    const q = (filterText || "").trim().toLowerCase();
+    visible = allProjects().filter((p) => !q || p.name.toLowerCase().includes(q));
+    activeIdx = visible.findIndex((p) => p.id === selectEl.value);
+    if (!visible.length) {
+      list.innerHTML = `<div class="ps-empty">${t("noSearchResults")}</div>`;
+      return;
+    }
+    list.innerHTML = visible.map((p, i) => `<div class="ps-item ${p.id === selectEl.value ? "current" : ""} ${i === activeIdx ? "active" : ""}" data-id="${escapeAttr(p.id)}">${p.id === selectEl.value ? "✓ " : ""}${escapeHtml(p.name)}</div>`).join("");
+    const act = list.querySelector(".ps-item.active");
+    if (act) act.scrollIntoView({ block: "nearest" });
+  }
+  function open(filterText) { render(filterText); list.classList.remove("hidden"); }
+  function close() { list.classList.add("hidden"); }
+  function choose(id) {
+    if (!id) return;
+    const changed = selectEl.value !== id;
+    selectEl.value = id;
+    const p = allProjects().find((x) => x.id === id);
+    searchInput.value = p ? p.name : "";
+    close();
+    searchInput.blur();
+    if (changed) selectEl.dispatchEvent(new Event("change"));
+  }
+  function highlight(i) {
+    if (!visible.length) return;
+    activeIdx = (i + visible.length) % visible.length;
+    list.querySelectorAll(".ps-item").forEach((el, k) => el.classList.toggle("active", k === activeIdx));
+    const act = list.querySelector(".ps-item.active");
+    if (act) act.scrollIntoView({ block: "nearest" });
+  }
+
+  searchInput.addEventListener("focus", () => { searchInput.select(); open(""); });
+  searchInput.addEventListener("click", () => { if (list.classList.contains("hidden")) open(""); });
+  searchInput.addEventListener("input", () => open(searchInput.value));
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); if (list.classList.contains("hidden")) open(searchInput.value); else highlight(activeIdx + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); highlight(activeIdx - 1); }
+    else if (e.key === "Enter") { e.preventDefault(); if (visible[activeIdx]) choose(visible[activeIdx].id); else if (visible.length === 1) choose(visible[0].id); }
+    else if (e.key === "Escape") { close(); }
   });
+  // mousedown (không phải click) để chọn được trước khi ô tìm kiếm mất focus.
+  list.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const item = e.target.closest(".ps-item");
+    if (item) choose(item.dataset.id);
+  });
+  const onDocDown = (e) => {
+    if (!document.body.contains(searchInput)) { document.removeEventListener("mousedown", onDocDown); document.removeEventListener("touchstart", onDocDown); return; }
+    if (!field.contains(e.target)) close();
+  };
+  document.addEventListener("mousedown", onDocDown);
+  document.addEventListener("touchstart", onDocDown, { passive: true });
+  searchInput.addEventListener("blur", () => setTimeout(close, 150));
+
+  // Hiện tên dự án đang chọn trong ô tìm kiếm (giúp biết đang chọn dự án nào).
+  const syncName = () => { const p = allProjects().find((x) => x.id === selectEl.value); if (p && document.activeElement !== searchInput) searchInput.value = p.name; };
+  selectEl.addEventListener("change", syncName);
+  setTimeout(syncName, 0);
 }
 function escapeHtml(str) {
   return String(str ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

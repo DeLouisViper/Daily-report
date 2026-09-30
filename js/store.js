@@ -287,8 +287,12 @@ async function syncConsumablesIssuedQty(projectId, logId, items) {
     // lệch nếu người dùng thêm/bớt dòng khi sửa lại phiếu xuất kho).
     let match = items.find((it) => equipItemDisplayLabel(it) === c.name);
     if (!match && c.sourceItemIndex != null && items[c.sourceItemIndex]) match = items[c.sourceItemIndex];
-    if (match && Number(match.qty) !== Number(c.issuedQty)) {
-      updates.push(updateDoc(doc(db, "projects", projectId, "consumables", d.id), { issuedQty: Number(match.qty) || 0 }));
+    if (match) {
+      const newIndex = items.indexOf(match);
+      const patch = {};
+      if (Number(match.qty) !== Number(c.issuedQty)) patch.issuedQty = Number(match.qty) || 0;
+      if (c.sourceItemIndex !== newIndex) patch.sourceItemIndex = newIndex; // giữ liên kết đúng khi vị trí dòng đổi
+      if (Object.keys(patch).length) updates.push(updateDoc(doc(db, "projects", projectId, "consumables", d.id), patch));
     }
   });
   if (updates.length) await Promise.all(updates);

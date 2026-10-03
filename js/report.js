@@ -1068,3 +1068,84 @@ export function buildConsumablesReportHTML({ project, items, currentUser, lang }
 function escapeHtml(str) {
   return String(str ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+
+// ============================================================
+// CHECK LIST CÔNG VIỆC (Work Checklist)
+// ============================================================
+export const CHECKLIST_ITEMS = [
+  { id: "toolbox", vi: "Chụp hình Toolbox Meeting với đầy đủ PPE trước 09:00 sáng", en: "Take a photo of the Toolbox Meeting with full PPE before 09:00 AM" },
+  { id: "housekeeping", vi: "Quay/chụp vệ sinh xung quanh khu vực làm việc trước 09:00 sáng", en: "Take photos/videos of the housekeeping around the working area before 09:00 AM" },
+  { id: "progress_photos", vi: "Gửi hình ảnh cập nhật công việc mỗi 1–2 giờ", en: "Send work progress update photos every 1–2 hours" },
+  { id: "drill_log", vi: "Cập nhật Nhật ký máy khoan trước 19:00", en: "Update the Drilling Machine Log before 19:00" },
+  { id: "boring_log", vi: "Gửi hình ảnh Boring Log trước 19:30", en: "Send Boring Log photos before 19:30" },
+];
+export const CHECKLIST_OTHER = { vi: "Công việc khác / Tự nhập", en: "Other Task / Custom Task" };
+
+// Tên file an toàn: bỏ dấu tiếng Việt và ký tự không hợp lệ, GIỮ khoảng trắng.
+export function safeFileName(str) {
+  return String(str || "")
+    .replace(/đ/g, "d").replace(/Đ/g, "D")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "")
+    .replace(/\s+/g, " ").trim().slice(0, 60) || "user";
+}
+
+export function buildChecklistHTML({ project, machine, dKey, operator, engineer, checklist, currentUser, lang }) {
+  const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
+  const dateDisplay = dKey.split("-").reverse().join("/");
+  const items = checklist?.items || {};
+  const custom = checklist?.otherEnabled ? (checklist.customTasks || []).filter((c) => c && String(c.text || "").trim()) : [];
+  const rows = CHECKLIST_ITEMS.map((it) => ({ main: it.vi, sub: it.en, done: !!items[it.id] }));
+  custom.forEach((c) => rows.push({ main: String(c.text).trim(), sub: `${CHECKLIST_OTHER.vi} / ${CHECKLIST_OTHER.en}`, done: !!c.done }));
+  const doneCount = rows.filter((r) => r.done).length;
+  const pct = rows.length ? Math.round((doneCount / rows.length) * 100) : 0;
+  const preparedBy = currentUser?.name || currentUser?.email || "";
+
+  const rowsHtml = rows.map((r, i) => `<tr>
+      <td class="num">${i + 1}</td>
+      <td><div style="font-weight:700;">${escapeHtml(r.main)}</div><div style="font-size:10px;color:#666;">${escapeHtml(r.sub)}</div></td>
+      <td style="white-space:nowrap;">${r.done
+        ? `<span class="st-done">✓ ${t("clCompleted")}</span>`
+        : `<span class="st-progress"><span style="display:inline-block;width:10px;height:10px;border:1.5px solid #16171b;vertical-align:-1px;margin-right:4px;"></span>${t("clPending")}</span>`}</td>
+    </tr>`).join("");
+
+  return `
+  <div class="report-page" id="checklistPrintArea">
+    <div class="report-head">
+      <div class="brand">
+        <div class="mark">DR</div>
+        <div><div class="name">HAI (Cambodia) Survey &amp; Construction Co., Ltd.</div></div>
+      </div>
+      <div class="meta"><div><b>${t("exportedAt")}:</b> ${exportedAt}</div></div>
+    </div>
+
+    <div class="report-title">CHECK LIST CÔNG VIỆC<br>WORK CHECKLIST</div>
+
+    <div class="report-section">
+      <table class="report-info-table report-table-closed">
+        <tr><td>${t("project")}</td><td>${escapeHtml(project?.name || "—")}</td></tr>
+        <tr><td>${t("teamLabel")}</td><td>${escapeHtml(machine?.name || "—")}</td></tr>
+        <tr><td>${t("reportDate")}</td><td>${dateDisplay}</td></tr>
+        <tr><td>${t("operator")}</td><td>${escapeHtml(operator || "—")}</td></tr>
+        <tr><td>${t("responsibleEngineer")}</td><td>${escapeHtml(engineer || "—")}</td></tr>
+        <tr><td>${t("preparedBy")}</td><td>${escapeHtml(preparedBy || "—")}</td></tr>
+        <tr><td>${t("checklistProgress")}</td><td>${doneCount}/${rows.length} ${t("clCompleted")} — ${pct}%</td></tr>
+      </table>
+    </div>
+
+    <div class="report-section">
+      <table class="report-table-closed">
+        <thead><tr><th style="width:8%;">${t("no")}</th><th>${t("taskCol")}</th><th style="width:24%;">${t("status")}</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+
+    <div class="sign-row" style="grid-template-columns:minmax(0,280px); justify-content:end;">
+      <div>
+        <div class="role">${t("preparedBy")}</div>
+        <div class="name">${escapeHtml(preparedBy)}</div>
+      </div>
+    </div>
+  </div>`;
+}

@@ -575,3 +575,30 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 .ps-item:hover, .ps-item.active { background: var(--accent-gradient); color: var(--accent-text); }
 .ps-item.current { font-weight: 800; }
 .ps-empty { padding: 10px 12px; font-size: 13px; color: var(--text-dim); }
+
+
+/* ---------- Check list công việc (Work Checklist) ---------- */
+.cl-progress { margin-bottom: 16px; }
+.cl-progress-text { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 14px; font-weight: 800; margin-bottom: 6px; }
+.cl-progress-text.complete { color: var(--success); text-shadow: 0 0 6px rgba(0,255,136,.5); }
+.cl-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px; margin: 0 0 8px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev-2);
+  cursor: pointer; color: var(--text); font-size: 14px; font-weight: 500; letter-spacing: 0;
+}
+.cl-row:hover { border-color: var(--accent); }
+.cl-row.done { border-color: var(--success); box-shadow: 0 0 6px rgba(0,255,136,.25); }
+.cl-row input[type="checkbox"], .cl-custom-row input[type="checkbox"] {
+  width: 22px; height: 22px; flex: 0 0 auto; margin: 0; padding: 0; accent-color: var(--accent); cursor: pointer;
+}
+.cl-no { flex: 0 0 auto; width: 24px; text-align: center; font-weight: 800; color: var(--text-dim); }
+.cl-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cl-text .vi { font-weight: 700; }
+.cl-text .en { font-size: 12px; color: var(--text-dim); }
+.cl-custom { margin: 0 0 10px 36px; }
+.cl-custom-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cl-custom-row input[type="text"] { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 640px) {
+  .cl-row { flex-wrap: wrap; }
+  .cl-custom { margin-left: 0; }
+}

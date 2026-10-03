@@ -9,7 +9,7 @@ import {
   watchBoreholes, addBorehole, updateBorehole, deleteBorehole, resetBoreholeDay,
   watchSurveyItems, addSurveyItem, updateSurveyItem, deleteSurveyItem, resetSurveyItemDay,
   watchActivity, watchGlobalActivity, dateKey, sumDailyLog,
-  watchDrillingMachines, addDrillingMachine, updateDrillingMachine, deleteDrillingMachine, saveDrillingMachineDayLog, updateDrillingMachineField,
+  watchDrillingMachines, addDrillingMachine, updateDrillingMachine, deleteDrillingMachine, saveDrillingMachineDayLog, updateDrillingMachineField, getDrillChecklist, saveDrillChecklist,
   watchEquipmentLogs, getLatestEquipmentLog, createEquipmentCheckout, updateEquipmentCheckout, saveEquipmentCheckin, deleteEquipmentLog,
   getEquipmentLogsOnce, updateEquipmentLogItemRemaining,
   watchConsumables, addConsumableItem, updateConsumableDay, deleteConsumableItem,
@@ -18,7 +18,7 @@ import {
 } from "./store.js";
 import { applyI18n, getLang, setLang, t } from "./i18n.js";
 import { initTheme, toggleTheme, getTheme, applyTheme } from "./theme.js";
-import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, buildRepairHistoryHTML, buildEquipmentCheckoutHTML, buildEquipmentCheckinHTML, buildMaterialsPdfHTML, buildDrillTeamPaymentPdfHTML, buildConsumablesReportHTML, slugify } from "./report.js";
+import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, buildRepairHistoryHTML, buildEquipmentCheckoutHTML, buildEquipmentCheckinHTML, buildMaterialsPdfHTML, buildDrillTeamPaymentPdfHTML, buildConsumablesReportHTML, buildChecklistHTML, CHECKLIST_ITEMS, CHECKLIST_OTHER, safeFileName, slugify } from "./report.js";
 import { EQUIPMENT_CATALOG, EQUIPMENT_CATEGORIES } from "./equipment-catalog.js";
 
 initTheme();
@@ -1098,18 +1098,24 @@ function getMachineDayLog(m, dKey) {
   return { data: {}, carried: false };
 }
 
+let drillLogSection = "log"; // "log" | "checklist" — giữ lại khi đổi ngôn ngữ/vẽ lại màn hình
 function renderDrillLogView() {
   mainView.innerHTML = topbarHtml("drillLogTitle") + `
+    <div class="eq-tabs">
+      <button type="button" class="btn btn-primary" id="dl_tab_log" data-i18n="drillLog"></button>
+      <button type="button" class="btn btn-ghost" id="dl_tab_checklist" data-i18n="checklistTitle"></button>
+    </div>
     <div class="report-toolbar">
       <div class="field"><label data-i18n="selectProject"></label><select id="dl_project"></select></div>
       <div class="field"><label data-i18n="searchProject"></label><input type="text" id="dl_search" data-i18n-placeholder="searchProjectPlaceholder" /></div>
       <div class="field"><label data-i18n="selectDate"></label><input type="date" id="dl_date" lang="vi" value="${dateKey()}" /></div>
-      <div class="field"><label data-i18n="selectMachine"></label><select id="dl_machineFilter"></select></div>
-      <button class="btn btn-primary" id="dl_exportPdf" data-i18n="exportPdf"></button>
-      <button class="btn btn-primary" id="dl_exportRepairLog" data-i18n="exportRepairLog"></button>
-      ${canEdit() ? `<button class="btn btn-primary" id="dl_addMachine" data-i18n="addMachine"></button>` : ""}
+      <div class="field dl-log-only"><label data-i18n="selectMachine"></label><select id="dl_machineFilter"></select></div>
+      <button class="btn btn-primary dl-log-only" id="dl_exportPdf" data-i18n="exportPdf"></button>
+      <button class="btn btn-primary dl-log-only" id="dl_exportRepairLog" data-i18n="exportRepairLog"></button>
+      ${canEdit() ? `<button class="btn btn-primary dl-log-only" id="dl_addMachine" data-i18n="addMachine"></button>` : ""}
     </div>
     <div id="dl_container"></div>
+    <div id="dl_checklist" class="hidden"></div>
   `;
   bindTopbar();
 
@@ -1157,6 +1163,7 @@ function renderDrillLogView() {
     const unsub = watchDrillingMachines(pid, (machines) => {
       currentMachines = machines;
       fillMachineFilter();
+      if (section === "checklist") { refreshChecklistPanel(); return; }
       if (isTimeInput(document.activeElement) || isRepairPanelOpen()) {
         pendingRerender = true;
         return;
@@ -1171,6 +1178,264 @@ function renderDrillLogView() {
       renderCards();
     }
   });
+  // ---------- WORK CHECKLIST (Check list công việc) ----------
+  // Team = máy khoan trong "Nhật ký máy khoan"; Operator / Engineer lấy từ chính
+  // nhật ký ngày của máy đó (getMachineDayLog), không nhập lại.
+  let section = drillLogSection;
+  const cl = { machineId: "", key: "", token: 0, items: {}, otherEnabled: false, custom: [], dirty: false, exists: false };
+  const clMachine = () => currentMachines.find((m) => m.id === cl.machineId) || null;
+  function clStats() {
+    const customValid = cl.otherEnabled ? cl.custom.filter((c) => (c.text || "").trim()) : [];
+    const total = CHECKLIST_ITEMS.length + customValid.length;
+    const done = CHECKLIST_ITEMS.filter((it) => cl.items[it.id]).length + customValid.filter((c) => c.done).length;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    const otherDone = customValid.length > 0 && customValid.every((c) => c.done);
+    return { total, done, pct, otherDone };
+  }
+  function clStatusBadge(done, id) {
+    return `<span ${id ? `id="${id}"` : ""} class="badge ${done ? "st-done" : "st-progress"}">${done ? t("clCompleted") : t("clPending")}</span>`;
+  }
+  function clProgressHtml() {
+    const s = clStats();
+    const complete = s.total > 0 && s.done === s.total;
+    return `<div class="cl-progress">
+      <div class="cl-progress-text ${complete ? "complete" : ""}"><span>${t("checklistProgress")}</span><span>${complete ? "✓ " : ""}${s.done}/${s.total} ${t("clCompleted")} — ${s.pct}%</span></div>
+      <div class="progress-bar"><div style="width:${s.pct}%"></div></div>
+    </div>`;
+  }
+  function clListHtml() {
+    const editable = canEdit();
+    const dis = editable ? "" : "disabled";
+    const s = clStats();
+    const otherDone = cl.otherEnabled && s.otherDone;
+    let html = CHECKLIST_ITEMS.map((it, i) => {
+      const done = !!cl.items[it.id];
+      return `<label class="cl-row ${done ? "done" : ""}">
+        <input type="checkbox" class="cl-cb" data-id="${it.id}" ${done ? "checked" : ""} ${dis} />
+        <span class="cl-no">${i + 1}</span>
+        <span class="cl-text"><span class="vi">${escapeHtml(it.vi)}</span><span class="en">${escapeHtml(it.en)}</span></span>
+        ${clStatusBadge(done)}
+      </label>`;
+    }).join("");
+    html += `<label class="cl-row ${otherDone ? "done" : ""}" id="cl_otherRow">
+        <input type="checkbox" id="cl_otherCb" ${cl.otherEnabled ? "checked" : ""} ${dis} />
+        <span class="cl-no">${CHECKLIST_ITEMS.length + 1}</span>
+        <span class="cl-text"><span class="vi">${escapeHtml(CHECKLIST_OTHER.vi)}</span><span class="en">${escapeHtml(CHECKLIST_OTHER.en)}</span></span>
+        ${clStatusBadge(otherDone, "cl_otherBadge")}
+      </label>`;
+    if (cl.otherEnabled) {
+      html += `<div class="cl-custom">
+        ${cl.custom.map((c, i) => `<div class="cl-custom-row" data-i="${i}">
+          <input type="checkbox" class="cl-c-done" ${c.done ? "checked" : ""} ${dis} />
+          <input type="text" class="cl-c-text" value="${escapeAttr(c.text)}" placeholder="${escapeAttr(t("enterTask"))}" ${dis} />
+          ${editable ? `<button type="button" class="bp-remove cl-c-remove" title="${escapeAttr(t("remove"))}">✕</button>` : ""}
+        </div>`).join("")}
+        ${editable ? `<button type="button" class="btn btn-ghost btn-sm" id="cl_addTask">${t("addTask")}</button>` : ""}
+      </div>`;
+    }
+    return html;
+  }
+  function updateClStatus() {
+    const el = document.getElementById("cl_status");
+    if (el) el.textContent = cl.dirty ? t("checklistDirty") : (cl.exists ? t("checklistSaved") : t("checklistNotSaved"));
+  }
+  function markClDirty() { cl.dirty = true; updateClStatus(); }
+  // Cập nhật nhẹ (không dựng lại danh sách) để không mất con trỏ khi đang gõ.
+  function refreshClProgress() {
+    const w = document.getElementById("cl_progressWrap");
+    if (w) w.innerHTML = clProgressHtml();
+    const s = clStats();
+    const otherDone = cl.otherEnabled && s.otherDone;
+    const b = document.getElementById("cl_otherBadge");
+    if (b) b.outerHTML = clStatusBadge(otherDone, "cl_otherBadge");
+    const r = document.getElementById("cl_otherRow");
+    if (r) r.classList.toggle("done", otherDone);
+  }
+  function renderChecklistList() {
+    const wrap = document.getElementById("cl_listWrap");
+    if (!wrap) return;
+    wrap.innerHTML = clListHtml();
+    refreshClProgress();
+    if (!canEdit()) return;
+    wrap.querySelectorAll(".cl-cb").forEach((cb) => cb.addEventListener("change", () => {
+      cl.items[cb.dataset.id] = cb.checked; markClDirty(); renderChecklistList();
+    }));
+    wrap.querySelector("#cl_otherCb").addEventListener("change", (e) => {
+      cl.otherEnabled = e.target.checked;
+      if (cl.otherEnabled && !cl.custom.length) cl.custom.push({ text: "", done: false });
+      markClDirty(); renderChecklistList();
+      if (cl.otherEnabled) { const f = wrap.querySelector(".cl-c-text"); if (f) f.focus(); }
+    });
+    wrap.querySelectorAll(".cl-custom-row").forEach((row) => {
+      const i = +row.dataset.i;
+      row.querySelector(".cl-c-done").addEventListener("change", (e) => { cl.custom[i].done = e.target.checked; markClDirty(); renderChecklistList(); });
+      row.querySelector(".cl-c-text").addEventListener("input", (e) => { cl.custom[i].text = e.target.value; markClDirty(); refreshClProgress(); });
+      row.querySelector(".cl-c-remove").addEventListener("click", () => {
+        cl.custom.splice(i, 1);
+        if (!cl.custom.length) cl.custom.push({ text: "", done: false });
+        markClDirty(); renderChecklistList();
+      });
+    });
+    const addBtn = wrap.querySelector("#cl_addTask");
+    if (addBtn) addBtn.addEventListener("click", () => {
+      cl.custom.push({ text: "", done: false });
+      markClDirty(); renderChecklistList();
+      const all = wrap.querySelectorAll(".cl-c-text"); if (all.length) all[all.length - 1].focus();
+    });
+  }
+  function renderChecklistShell() {
+    const box = document.getElementById("dl_checklist");
+    if (!box) return;
+    const m = clMachine();
+    const dKey = dateInput.value || dateKey();
+    const info = m ? getMachineDayLog(m, dKey).data : {};
+    box.innerHTML = `
+      <div class="card">
+        <h3>✅ ${t("checklistTitle")}</h3>
+        <div class="field-row">
+          <div class="field"><label>${t("selectTeam")}</label>
+            <select id="cl_team">${currentMachines.map((x) => `<option value="${x.id}" ${x.id === cl.machineId ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("")}</select></div>
+          <div class="field"><label>${t("operator")}</label><input value="${escapeAttr(info.operator)}" placeholder="—" disabled /></div>
+          <div class="field"><label>${t("responsibleEngineer")}</label><input value="${escapeAttr(info.engineer)}" placeholder="—" disabled /></div>
+          <div class="field"><label>${t("preparedBy")}</label><input value="${escapeAttr(CURRENT_USER.name || CURRENT_USER.email)}" disabled /></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>${t("todayChecklist")}</h3>
+        <div id="cl_progressWrap"></div>
+        <div id="cl_listWrap"></div>
+        <div id="cl_status" class="dtp-status"></div>
+        <div class="equip-actions">
+          ${canEdit() ? `<button type="button" class="btn btn-primary" id="cl_save">💾 ${t("save")}</button>` : ""}
+          <button type="button" class="btn btn-primary" id="cl_exportPdf">${t("exportPdfOnly")}</button>
+        </div>
+      </div>`;
+    renderChecklistList();
+    updateClStatus();
+    box.querySelector("#cl_team").addEventListener("change", async (e) => {
+      if (cl.dirty && !(await showConfirmModal(t("checklistDiscardConfirm")))) { e.target.value = cl.machineId; return; }
+      cl.machineId = e.target.value;
+      refreshChecklistPanel();
+    });
+    const saveBtn = box.querySelector("#cl_save");
+    if (saveBtn) saveBtn.addEventListener("click", saveChecklist);
+    box.querySelector("#cl_exportPdf").addEventListener("click", exportChecklistPdf);
+  }
+  // Nạp checklist đã lưu của (Project + Team + Ngày) — 1 lần đọc theo ID cố định.
+  // Chỉ nạp lại khi đổi Project/Team/Ngày; snapshot máy khoan không làm mất phần đang gõ dở.
+  async function refreshChecklistPanel(force) {
+    const box = document.getElementById("dl_checklist");
+    if (!box || section !== "checklist" || !currentProject) return;
+    if (!currentMachines.length) { box.innerHTML = `<div class="empty-state">${t("checklistNoTeams")}</div>`; cl.key = ""; return; }
+    if (!currentMachines.some((m) => m.id === cl.machineId)) cl.machineId = currentMachines[0].id;
+    const dKey = dateInput.value || dateKey();
+    const key = `${currentProject.id}|${cl.machineId}|${dKey}`;
+    if (key === cl.key && !force) { if (!cl.dirty) renderChecklistShell(); return; }
+    const token = ++cl.token;
+    box.innerHTML = `<div class="empty-state">${t("loadingEllipsis")}</div>`;
+    let saved = null;
+    try {
+      saved = await getDrillChecklist(currentProject.id, cl.machineId, dKey);
+    } catch (e) {
+      if (token !== cl.token) return;
+      box.innerHTML = `<div class="empty-state">${escapeHtml(t("clLoadError"))}<br>${escapeHtml(e?.message || String(e))}</div>`;
+      cl.key = "";
+      return;
+    }
+    if (token !== cl.token) return;
+    cl.key = key;
+    cl.exists = !!saved;
+    cl.items = { ...(saved?.items || {}) };
+    cl.otherEnabled = !!saved?.otherEnabled;
+    cl.custom = (saved?.customTasks || []).map((c) => ({ text: c.text || "", done: !!c.done }));
+    if (cl.otherEnabled && !cl.custom.length) cl.custom.push({ text: "", done: false });
+    cl.dirty = false;
+    renderChecklistShell();
+  }
+  async function saveChecklist() {
+    const m = clMachine();
+    if (!m || !currentProject) return;
+    const btn = document.getElementById("cl_save");
+    if (btn) btn.disabled = true;
+    const dKey = dateInput.value || dateKey();
+    const items = {};
+    CHECKLIST_ITEMS.forEach((it) => { items[it.id] = !!cl.items[it.id]; });
+    const customTasks = cl.otherEnabled
+      ? cl.custom.map((c) => ({ text: (c.text || "").trim(), done: !!c.done })).filter((c) => c.text)
+      : [];
+    try {
+      showSaveIndicator(true);
+      await saveDrillChecklist(currentProject.id, m, dKey, { items, otherEnabled: cl.otherEnabled, customTasks }, CURRENT_USER, !cl.exists);
+      showSaveIndicator();
+      cl.items = items;
+      cl.custom = customTasks.map((c) => ({ ...c }));
+      if (cl.otherEnabled && !cl.custom.length) cl.custom.push({ text: "", done: false });
+      cl.exists = true;
+      cl.dirty = false;
+      renderChecklistList();
+      updateClStatus();
+    } catch (e) {
+      showSaveIndicator();
+      alert(t("equipSaveError") + "\n" + (e?.message || e));
+    } finally {
+      const b = document.getElementById("cl_save");
+      if (b) b.disabled = false;
+    }
+  }
+  async function exportChecklistPdf() {
+    const m = clMachine();
+    if (!m || !currentProject) return;
+    const btn = document.getElementById("cl_exportPdf");
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = "…";
+    let holder = null;
+    try {
+      const dKey = dateInput.value || dateKey();
+      const info = getMachineDayLog(m, dKey).data;
+      const html = buildChecklistHTML({
+        project: currentProject, machine: m, dKey,
+        operator: info.operator || "", engineer: info.engineer || "",
+        checklist: { items: cl.items, otherEnabled: cl.otherEnabled, customTasks: cl.custom },
+        currentUser: CURRENT_USER, lang: getLang(),
+      });
+      holder = document.createElement("div");
+      holder.style.position = "fixed"; holder.style.top = "0"; holder.style.left = "-99999px";
+      holder.innerHTML = html;
+      document.body.appendChild(holder);
+      await exportReportToPdf("checklistPrintArea", `Checklist-${safeFileName(CURRENT_USER.name || CURRENT_USER.email)}-${dKey}.pdf`);
+    } finally {
+      if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+      btn.disabled = false; btn.textContent = orig;
+    }
+  }
+  function applySection() {
+    document.querySelectorAll(".dl-log-only").forEach((el) => el.classList.toggle("hidden", section !== "log"));
+    document.getElementById("dl_container").classList.toggle("hidden", section !== "log");
+    document.getElementById("dl_checklist").classList.toggle("hidden", section !== "checklist");
+    document.getElementById("dl_tab_log").className = `btn ${section === "log" ? "btn-primary" : "btn-ghost"}`;
+    document.getElementById("dl_tab_checklist").className = `btn ${section === "checklist" ? "btn-primary" : "btn-ghost"}`;
+  }
+  async function setSection(s) {
+    if (s === section) return;
+    if (section === "checklist" && cl.dirty && !(await showConfirmModal(t("checklistDiscardConfirm")))) return;
+    section = drillLogSection = s;
+    cl.dirty = false;
+    applySection();
+    if (s === "log") { if (currentProject) renderCards(); }
+    else refreshChecklistPanel(true);
+  }
+  document.getElementById("dl_tab_log").addEventListener("click", () => setSection("log"));
+  document.getElementById("dl_tab_checklist").addEventListener("click", () => setSection("checklist"));
+  applySection();
+  async function onDateChange() {
+    if (section !== "checklist") { renderCards(); return; }
+    if (cl.dirty && !(await showConfirmModal(t("checklistDiscardConfirm")))) {
+      dateInput.value = cl.key.split("|")[2] || dateKey();
+      return;
+    }
+    refreshChecklistPanel();
+  }
+
   document.getElementById("dl_container").addEventListener("click", () => {
     setTimeout(() => {
       if (pendingRerender && !isRepairPanelOpen() && !isTimeInput(document.activeElement)) {
@@ -1185,8 +1450,14 @@ function renderDrillLogView() {
     loadMachines(pid);
   }
 
-  projSelect.addEventListener("change", () => loadProject(projSelect.value));
-  dateInput.addEventListener("change", renderCards);
+  projSelect.addEventListener("change", async () => {
+    if (section === "checklist" && cl.dirty) {
+      if (!(await showConfirmModal(t("checklistDiscardConfirm")))) { if (currentProject) projSelect.value = currentProject.id; return; }
+      cl.dirty = false;
+    }
+    loadProject(projSelect.value);
+  });
+  dateInput.addEventListener("change", onDateChange);
   machineFilter.addEventListener("change", renderCards);
   const addBtn = document.getElementById("dl_addMachine");
   if (addBtn) addBtn.addEventListener("click", () => openDrillMachineModal(currentProject.id));

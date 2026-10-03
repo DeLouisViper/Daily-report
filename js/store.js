@@ -251,6 +251,30 @@ export async function updateDrillingMachineField(projectId, id, dKey, field, val
   await logActivity(projectId, user, "updated", `${label} (${dKey})`);
 }
 
+// ---------- Work Checklist (Check list công việc) ----------
+// Mỗi Project + Team (máy khoan) + Ngày chỉ có ĐÚNG 1 document, với ID cố định
+// "{machineId}_{yyyy-mm-dd}" nên không thể tạo trùng; lưu lại = ghi đè/merge
+// vào chính document đó. Đọc 1 document theo ID = 1 read duy nhất.
+export async function getDrillChecklist(projectId, machineId, dKey) {
+  const snap = await getDoc(doc(db, "projects", projectId, "drillChecklists", `${machineId}_${dKey}`));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+export async function saveDrillChecklist(projectId, machine, dKey, data, user, isNew) {
+  const who = user?.name || user?.email || "—";
+  const payload = {
+    ...data,
+    machineId: machine.id,
+    teamName: machine.name || "",
+    dKey,
+    updatedAt: serverTimestamp(),
+    updatedBy: who,
+    updatedByUid: user?.uid || "",
+  };
+  if (isNew) { payload.createdAt = serverTimestamp(); payload.createdBy = who; }
+  await setDoc(doc(db, "projects", projectId, "drillChecklists", `${machine.id}_${dKey}`), payload, { merge: true });
+  await logActivity(projectId, user, "updated", `Check list công việc: ${machine.name || "—"} (${dKey})`);
+}
+
 // ---------- Equipment Check In / Check Out ----------
 // Mỗi lượt "xuất kho" cho 1 dự án là 1 document trong projects/{id}/equipmentLogs.
 // Khi thu hồi (check-in), ta cập nhật field "checkin" ngay trên document đó,

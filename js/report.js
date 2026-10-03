@@ -1079,6 +1079,8 @@ export const CHECKLIST_ITEMS = [
   { id: "progress_photos", vi: "Gửi hình ảnh cập nhật công việc mỗi 1–2 giờ", en: "Send work progress update photos every 1–2 hours" },
   { id: "drill_log", vi: "Cập nhật Nhật ký máy khoan trước 19:00", en: "Update the Drilling Machine Log before 19:00" },
   { id: "boring_log", vi: "Gửi hình ảnh Boring Log trước 19:30", en: "Send Boring Log photos before 19:30" },
+  { id: "report_rock", vi: "Báo group ngay khi khoan vào đá", en: "Report to the group immediately when drilling into rock" },
+  { id: "update_supplies", vi: "Cập nhật số lượng vật tư mỗi cuối ngày (ống lấy mẫu, hộp đựng mẫu,...)", en: "Update material quantities at the end of each day (sampling tubes, sample boxes, etc.)" },
 ];
 export const CHECKLIST_OTHER = { vi: "Công việc khác / Tự nhập", en: "Other Task / Custom Task" };
 
@@ -1096,15 +1098,15 @@ export function buildChecklistHTML({ project, machine, dKey, operator, engineer,
   const dateDisplay = dKey.split("-").reverse().join("/");
   const items = checklist?.items || {};
   const custom = checklist?.otherEnabled ? (checklist.customTasks || []).filter((c) => c && String(c.text || "").trim()) : [];
-  const rows = CHECKLIST_ITEMS.map((it) => ({ main: it.vi, sub: it.en, done: !!items[it.id] }));
-  custom.forEach((c) => rows.push({ main: String(c.text).trim(), sub: `${CHECKLIST_OTHER.vi} / ${CHECKLIST_OTHER.en}`, done: !!c.done }));
+  const rows = CHECKLIST_ITEMS.map((it) => ({ main: lang === "vi" ? it.vi : it.en, done: !!items[it.id] })); // chỉ hiện đúng ngôn ngữ đang chọn
+  custom.forEach((c) => rows.push({ main: String(c.text).trim(), done: !!c.done }));
   const doneCount = rows.filter((r) => r.done).length;
   const pct = rows.length ? Math.round((doneCount / rows.length) * 100) : 0;
   const preparedBy = currentUser?.name || currentUser?.email || "";
 
   const rowsHtml = rows.map((r, i) => `<tr>
       <td class="num">${i + 1}</td>
-      <td><div style="font-weight:700;">${escapeHtml(r.main)}</div><div style="font-size:10px;color:#666;">${escapeHtml(r.sub)}</div></td>
+      <td style="font-weight:600;">${escapeHtml(r.main)}</td>
       <td style="white-space:nowrap;">${r.done
         ? `<span class="st-done">✓ ${t("clCompleted")}</span>`
         : `<span class="st-progress"><span style="display:inline-block;width:10px;height:10px;border:1.5px solid #16171b;vertical-align:-1px;margin-right:4px;"></span>${t("clPending")}</span>`}</td>

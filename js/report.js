@@ -1013,7 +1013,7 @@ export function buildConsumablesReportHTML({ project, items, currentUser, lang }
   const totalsByItem = {};
   (items || []).forEach((it) => {
     const key = it.name + "|" + (it.unit || "");
-    const totalConsumed = Object.values(it.dailyLog || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+    const totalConsumed = Math.round(Object.values(it.dailyLog || {}).reduce((s, v) => s + (Number(v) || 0), 0) * 1e6) / 1e6;
     totalsByItem[key] = {
       total: totalConsumed,
       issuedQty: it.issuedQty != null ? Number(it.issuedQty) : null,
@@ -1029,7 +1029,7 @@ export function buildConsumablesReportHTML({ project, items, currentUser, lang }
 
   const totalsRows = Object.entries(totalsByItem).map(([key, info]) => {
     const [name, unit] = key.split("|");
-    const remaining = info.issuedQty != null ? Math.max(0, info.issuedQty - info.total) : null;
+    const remaining = info.issuedQty != null ? Math.max(0, Math.round((info.issuedQty - info.total) * 1e6) / 1e6) : null;
     return `<tr>
       <td>${escapeHtml(name)}</td><td>${escapeHtml(unit || "—")}</td>
       <td class="num">${info.issuedQty != null ? info.issuedQty : "—"}</td>

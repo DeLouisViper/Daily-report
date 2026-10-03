@@ -2066,8 +2066,8 @@ function renderEquipmentView() {
         <tbody>
           ${visible.map((it) => {
             const qty = (it.dailyLog || {})[dKey];
-            const totalConsumed = Object.values(it.dailyLog || {}).reduce((s, v) => s + (Number(v) || 0), 0);
-            const remaining = it.issuedQty != null ? (Number(it.issuedQty) - totalConsumed) : null;
+            const totalConsumed = Math.round(Object.values(it.dailyLog || {}).reduce((s, v) => s + (Number(v) || 0), 0) * 1e6) / 1e6;
+            const remaining = it.issuedQty != null ? Math.round((Number(it.issuedQty) - totalConsumed) * 1e6) / 1e6 : null;
             return `<tr data-id="${it.id}">
               <td data-label="${t("materialName")}">${escapeHtml(it.name)}</td>
               <td data-label="${t("unitLabel")}">${escapeHtml(it.unit || "—")}</td>
@@ -2123,7 +2123,7 @@ function renderEquipmentView() {
         // (nếu vật tư này được theo dõi từ 1 phiếu xuất kho cụ thể).
         for (const it of items) {
           if (!it.sourceLogId) continue;
-          const totalConsumed = Object.values(it.dailyLog || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+          const totalConsumed = Math.round(Object.values(it.dailyLog || {}).reduce((s, v) => s + (Number(v) || 0), 0) * 1e6) / 1e6;
           const remaining = Math.max(0, (Number(it.issuedQty) || 0) - totalConsumed);
           try {
             await updateEquipmentLogItemRemaining(currentProject.id, it.sourceLogId, it.sourceItemIndex, remaining, CURRENT_USER);

@@ -1213,14 +1213,14 @@ function renderDrillLogView() {
       return `<label class="cl-row ${done ? "done" : ""}">
         <input type="checkbox" class="cl-cb" data-id="${it.id}" ${done ? "checked" : ""} ${dis} />
         <span class="cl-no">${i + 1}</span>
-        <span class="cl-text"><span class="vi">${escapeHtml(it.vi)}</span><span class="en">${escapeHtml(it.en)}</span></span>
+        <span class="cl-text"><span class="vi">${escapeHtml(getLang() === "vi" ? it.vi : it.en)}</span></span>
         ${clStatusBadge(done)}
       </label>`;
     }).join("");
     html += `<label class="cl-row ${otherDone ? "done" : ""}" id="cl_otherRow">
         <input type="checkbox" id="cl_otherCb" ${cl.otherEnabled ? "checked" : ""} ${dis} />
         <span class="cl-no">${CHECKLIST_ITEMS.length + 1}</span>
-        <span class="cl-text"><span class="vi">${escapeHtml(CHECKLIST_OTHER.vi)}</span><span class="en">${escapeHtml(CHECKLIST_OTHER.en)}</span></span>
+        <span class="cl-text"><span class="vi">${escapeHtml(getLang() === "vi" ? CHECKLIST_OTHER.vi : CHECKLIST_OTHER.en)}</span></span>
         ${clStatusBadge(otherDone, "cl_otherBadge")}
       </label>`;
     if (cl.otherEnabled) {

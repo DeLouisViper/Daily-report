@@ -181,6 +181,26 @@ export const dict = {
     done: "Xong",
     repairItemPlaceholder: "— Chọn hạng mục —",
 
+    // Check list công việc (Work Checklist)
+    checklistTitle: "Check list công việc",
+    todayChecklist: "Công việc hôm nay",
+    selectTeam: "Chọn Team",
+    teamLabel: "Team",
+    responsibleEngineer: "Kỹ sư phụ trách",
+    clCompleted: "Đã hoàn thành",
+    clPending: "Chưa hoàn thành",
+    checklistProgress: "Tiến độ checklist",
+    enterTask: "Nhập công việc",
+    addTask: "+ Thêm công việc",
+    exportPdfOnly: "Xuất PDF",
+    taskCol: "Công việc",
+    checklistSaved: "Đã lưu checklist của ngày này — có thể chỉnh sửa và lưu lại bất cứ lúc nào.",
+    checklistNotSaved: "Chưa lưu checklist của ngày này.",
+    checklistDirty: "Có thay đổi chưa lưu.",
+    checklistNoTeams: "Dự án này chưa có Team nào trong Nhật ký máy khoan. Hãy thêm máy khoan/Team ở tab \"Nhật ký máy khoan\" trước.",
+    checklistDiscardConfirm: "Checklist đang có thay đổi chưa lưu. Bạn có chắc muốn chuyển và bỏ các thay đổi này?",
+    clLoadError: "Không tải được checklist. Có thể Firestore Rules chưa cho phép (drillChecklists). Chi tiết lỗi:",
+
     // Equipment Check In / Check Out
     equipmentTitle: "Xuất/Nhập thiết bị",
     newCheckout: "+ Tạo phiếu xuất kho",
@@ -544,6 +564,26 @@ export const dict = {
     manualInputPlaceholder: "Enter other description...",
     done: "Done",
     repairItemPlaceholder: "— Select item(s) —",
+
+    // Work Checklist
+    checklistTitle: "Work Checklist",
+    todayChecklist: "Today's Checklist",
+    selectTeam: "Select Team",
+    teamLabel: "Team",
+    responsibleEngineer: "Responsible Engineer",
+    clCompleted: "Completed",
+    clPending: "Pending",
+    checklistProgress: "Checklist Progress",
+    enterTask: "Enter task",
+    addTask: "+ Add task",
+    exportPdfOnly: "Export PDF",
+    taskCol: "Task",
+    checklistSaved: "Checklist for this day is saved — you can edit and save again anytime.",
+    checklistNotSaved: "Checklist for this day has not been saved yet.",
+    checklistDirty: "Unsaved changes.",
+    checklistNoTeams: "This project has no Team in the Drilling Machine Log yet. Please add a machine/Team in the \"Drilling Machine Log\" tab first.",
+    checklistDiscardConfirm: "The checklist has unsaved changes. Are you sure you want to switch and discard them?",
+    clLoadError: "Could not load the checklist. The Firestore rules may not allow it yet (drillChecklists). Error details:",
 
     // Equipment Check In / Check Out
     equipmentTitle: "Equipment Check In/Out",

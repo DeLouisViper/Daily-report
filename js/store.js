@@ -493,5 +493,8 @@ export function dateKey(d = new Date()) {
 }
 export function sumDailyLog(dailyLog) {
   if (!dailyLog) return 0;
-  return Object.values(dailyLog).reduce((a, b) => a + (Number(b) || 0), 0);
+  const sum = Object.values(dailyLog).reduce((a, b) => a + (Number(b) || 0), 0);
+  // Làm tròn để loại sai số số thực (VD 66.79999999999998 thay vì 66.8), nếu
+  // không thì tổng "gần bằng" khối lượng hợp đồng nhưng vẫn bị tính chưa xong.
+  return Math.round(sum * 1e6) / 1e6;
 }

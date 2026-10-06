@@ -437,6 +437,13 @@ export async function deleteConsumableItem(projectId, itemId, user, label) {
   await logActivity(projectId, user, "deleted", `Vật tư tiêu hao: ${label || "—"}`);
 }
 
+// Chuẩn hóa tên đội khoan để so khớp: bỏ khoảng trắng thừa, không phân biệt hoa/thường và dấu
+// (VD "Nhuan" = "nhuan" = "NHUAN"), tránh trường hợp cùng 1 đội nhưng gõ khác chữ hoa nên không khớp.
+export function normTeamKey(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "d")
+    .toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 // ---------- Khối lượng đội khoan (Drill Team Payment) ----------
 // Mỗi đội khoan trong 1 dự án có 1 phiếu khối lượng "đang mở" (status: "open")
 // có thể lưu/cập nhật nhiều lần qua từng ngày (thêm hố khoan mới hoàn thành,
@@ -450,7 +457,7 @@ export function watchDrillTeamPayments(projectId, cb) {
 export function watchOpenDrillTeamPayment(projectId, team, cb) {
   const q = query(collection(db, "projects", projectId, "drillTeamPayments"), where("status", "==", "open"));
   return onSnapshot(q, (snap) => {
-    const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((d) => d.team === team);
+    const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((d) => normTeamKey(d.team) === normTeamKey(team));
     if (!docs.length) { cb(null); return; }
     docs.sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
     cb(docs[0]);
@@ -460,7 +467,7 @@ export function watchOpenDrillTeamPayment(projectId, team, cb) {
 // listener realtime ghi đè lên nội dung người dùng đang gõ dở.
 export async function getOpenDrillTeamPayment(projectId, team) {
   const snap = await getDocs(query(collection(db, "projects", projectId, "drillTeamPayments"), where("status", "==", "open")));
-  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((d) => d.team === team);
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((d) => normTeamKey(d.team) === normTeamKey(team));
   if (!docs.length) return null;
   docs.sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
   return docs[0];
@@ -502,6 +509,15 @@ export async function finalizeDrillTeamPayment(projectId, id, data, user) {
   await updateDoc(doc(db, "projects", projectId, "drillTeamPayments", finalId), { status: "completed" });
   await logActivity(projectId, user, "updated", `Hoàn thành bảng khối lượng đội khoan (${data.team || "—"})`);
   return finalId;
+}
+// Đóng phiếu đang mở (không xuất PDF): chuyển sang "completed", giữ nguyên dữ liệu.
+export async function closeDrillTeamPayment(projectId, id, user, team) {
+  await updateDoc(doc(db, "projects", projectId, "drillTeamPayments", id), {
+    status: "completed",
+    updatedAt: serverTimestamp(),
+    updatedBy: user?.name || user?.email || "—",
+  });
+  await logActivity(projectId, user, "updated", `Đóng bảng khối lượng đội khoan (${team || "—"})`);
 }
 export async function deleteDrillTeamPayment(projectId, id, user, team) {
   await deleteDoc(doc(db, "projects", projectId, "drillTeamPayments", id));

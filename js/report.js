@@ -894,9 +894,11 @@ function dtpTeamBodyHtml({
   method, boreholes, days,
   soilRate, soilCurrency, rockRate, rockCurrency,
   workerCurrency, laborCurrency, startDate, endDate,
-  allowanceAmount, allowanceCurrency, allowanceNote, advances, totals,
+  allowances, advances, totals,
 }) {
   const totalAdvance = {};
+  const totalAllowance = {};
+  (allowances || []).forEach((a) => { totalAllowance[a.currency] = (totalAllowance[a.currency] || 0) + (Number(a.amount) || 0); });
   (advances || []).forEach((a) => { totalAdvance[a.currency] = (totalAdvance[a.currency] || 0) + (Number(a.amount) || 0); });
 
   let volumeSection, volumeTotalsLine;
@@ -977,8 +979,23 @@ function dtpTeamBodyHtml({
       <td class="num">${dtpMoney(a.amount, a.currency)}</td>
       <td>${escapeHtml(a.note || "—")}</td>
     </tr>`).join("");
+  const sortedAllowances = [...(allowances || [])].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const allowanceRows = sortedAllowances.map((a) => `<tr>
+      <td>${a.date ? a.date.split("-").reverse().join("/") : "—"}</td>
+      <td class="num">${dtpMoney(a.amount, a.currency)}</td>
+      <td>${escapeHtml(a.note || "—")}</td>
+    </tr>`).join("");
+  const allowancesSection = (allowances || []).length ? `
+    <div class="report-section">
+      <div class="section-title">${t("allowanceTitle")}</div>
+      <table class="report-table-closed">
+        <thead><tr><th>${t("dateCol")}</th><th>${t("allowanceAmount")}</th><th>${t("noteCol")}</th></tr></thead>
+        <tbody>${allowanceRows}</tbody>
+      </table>
+    </div>` : "";
   const advancesSection = (advances || []).length ? `
     <div class="report-section">
+      <div class="section-title">${t("advancesTitle")}</div>
       <table class="report-table-closed">
         <thead><tr><th>${t("advanceDate")}</th><th>${t("advanceAmount")}</th><th>${t("noteCol")}</th></tr></thead>
         <tbody>${advanceRows}</tbody>
@@ -987,12 +1004,13 @@ function dtpTeamBodyHtml({
 
   return `
     ${volumeSection}
+    ${allowancesSection}
     ${advancesSection}
 
     <div class="report-section dtp-payment-block">
       <table class="report-info-table report-table-closed">
         <tr><td>${t("volumeTotalLabel")}</td><td>${volumeTotalsLine.join("; ")}</td></tr>
-        <tr><td>+ ${t("allowanceTitle")}</td><td>${allowanceAmount ? dtpMoney(allowanceAmount, allowanceCurrency) : dtpMoney(0, "VND")}${allowanceNote ? `<div style="font-size:10.5px;color:#555;margin-top:2px;">${escapeHtml(allowanceNote)}</div>` : ""}</td></tr>
+        <tr><td>+ ${t("allowanceTitle")}</td><td>${Object.keys(totalAllowance).length ? Object.entries(totalAllowance).map(([c, v]) => dtpMoney(v, c)).join("; ") : dtpMoney(0, "VND")}</td></tr>
         <tr><td>− ${t("totalAdvanceLabel")}</td><td>${Object.keys(totalAdvance).length ? Object.entries(totalAdvance).map(([c, v]) => dtpMoney(v, c)).join("; ") : dtpMoney(0, "VND")}</td></tr>
       </table>
       <div class="dtp-grand-final">
@@ -1006,13 +1024,13 @@ export function buildDrillTeamPaymentPdfHTML({
   project, method, team, drillTeamRep, boreholes, days,
   soilRate, soilCurrency, rockRate, rockCurrency,
   workerCurrency, laborCurrency, startDate, endDate,
-  allowanceAmount, allowanceCurrency, allowanceNote, advances, totals, currentUser, lang,
+  allowances, advances, totals, currentUser, lang,
 }) {
   const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
   const body = dtpTeamBodyHtml({
     method, boreholes, days, soilRate, soilCurrency, rockRate, rockCurrency,
     workerCurrency, laborCurrency, startDate, endDate,
-    allowanceAmount, allowanceCurrency, allowanceNote, advances, totals,
+    allowances, advances, totals,
   });
   return `
   <div class="report-page" id="drillPayPrintArea">
@@ -1058,6 +1076,47 @@ export function buildDrillTeamCombinedPdfHTML({ project, teams, currentUser, lan
       <td class="num">${dtpFormatTotalsReport(tm.totals).join("; ")}</td>
     </tr>`;
   }).join("");
+  // Bảng tổng hợp TẤT CẢ hố khoan của các đội: tên hố khoan, số m đất/đá, đơn giá (theo đơn giá của từng đội), thành tiền.
+  const volRows = [];
+  teams.forEach((tm) => (tm.boreholes || []).forEach((b) => volRows.push({ tm, b })));
+  const sumM = (k) => volRows.reduce((s, r) => s + (Number(r.b[k]) || 0), 0);
+  const addCur = (obj, cur, v) => { obj[cur] = (obj[cur] || 0) + v; };
+  const soilMoneyTot = {}, rockMoneyTot = {}, allMoneyTot = {};
+  const volRowsHtml = volRows.map((r, i) => {
+    const soilM = Number(r.b.soilM) || 0, rockM = Number(r.b.rockM) || 0;
+    const isContract = r.tm.method !== "daily";
+    if (!isContract) {
+      return `<tr><td class="num">${i + 1}</td><td>${escapeHtml(r.tm.team)}</td><td>${escapeHtml(r.b.name || "—")}</td>
+        <td class="num">${soilM}</td><td class="num">—</td><td class="num">—</td>
+        <td class="num">${rockM}</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>`;
+    }
+    const soilMoney = soilM * r.tm.soilRate, rockMoney = rockM * r.tm.rockRate;
+    addCur(soilMoneyTot, r.tm.soilCurrency, soilMoney); addCur(rockMoneyTot, r.tm.rockCurrency, rockMoney);
+    addCur(allMoneyTot, r.tm.soilCurrency, soilMoney); addCur(allMoneyTot, r.tm.rockCurrency, rockMoney);
+    return `<tr><td class="num">${i + 1}</td><td>${escapeHtml(r.tm.team)}</td><td>${escapeHtml(r.b.name || "—")}</td>
+      <td class="num">${soilM}</td><td class="num">${dtpMoney(r.tm.soilRate, r.tm.soilCurrency)}</td><td class="num">${dtpMoney(soilMoney, r.tm.soilCurrency)}</td>
+      <td class="num">${rockM}</td><td class="num">${dtpMoney(r.tm.rockRate, r.tm.rockCurrency)}</td><td class="num">${dtpMoney(rockMoney, r.tm.rockCurrency)}</td>
+      <td class="num">${r.tm.soilCurrency === r.tm.rockCurrency ? dtpMoney(soilMoney + rockMoney, r.tm.soilCurrency) : `${dtpMoney(soilMoney, r.tm.soilCurrency)} + ${dtpMoney(rockMoney, r.tm.rockCurrency)}`}</td></tr>`;
+  }).join("");
+  const moneyLines = (obj) => (Object.keys(obj).length ? Object.entries(obj).map(([c, v]) => dtpMoney(v, c)).join("<br>") : "—");
+  const volumeAllHtml = volRows.length ? `
+    <div class="report-section">
+      <div class="section-title">${t("combinedVolumeTitle")}</div>
+      <table class="report-table-closed">
+        <thead><tr>
+          <th style="width:5%;">${t("no")}</th><th>${t("drillTeamLabel")}</th><th>${t("boreholeName")}</th>
+          <th>${t("soilM")}</th><th>${t("soilRate")}</th><th>${t("soilMoney")}</th>
+          <th>${t("rockM")}</th><th>${t("rockRate")}</th><th>${t("rockMoney")}</th><th>${t("total")}</th>
+        </tr></thead>
+        <tbody>${volRowsHtml}</tbody>
+        <tfoot><tr class="report-total-row">
+          <td colspan="3">${t("total")}</td>
+          <td class="num">${Math.round(sumM("soilM") * 100) / 100}</td><td></td><td class="num">${moneyLines(soilMoneyTot)}</td>
+          <td class="num">${Math.round(sumM("rockM") * 100) / 100}</td><td></td><td class="num">${moneyLines(rockMoneyTot)}</td>
+          <td class="num">${moneyLines(allMoneyTot)}</td>
+        </tr></tfoot>
+      </table>
+    </div>` : "";
   const clusters = teams.map((tm, i) => `
     <div class="report-section dtp-cluster-head">${i + 1}. ${t("drillTeamLabel")}: ${escapeHtml(tm.team)} · ${tm.method === "daily" ? t("methodDaily") : t("methodContract")}</div>
     ${tm.hasSheet ? "" : `<div class="report-section" style="font-size:11px;font-style:italic;">${t("combinedNoSheetNote")}</div>`}
@@ -1074,6 +1133,7 @@ export function buildDrillTeamCombinedPdfHTML({ project, teams, currentUser, lan
         <tr><td>${t("drillTeamLabel")}</td><td>${escapeHtml(teams.map((tm) => tm.team).join(", "))}</td></tr>
       </table>
     </div>
+    ${volumeAllHtml}
     <div class="report-section">
       <table class="report-table-closed">
         <thead><tr><th style="width:6%;">${t("no")}</th><th>${t("drillTeamLabel")}</th><th>${t("paymentMethod")}</th><th>${t("totalQty")}</th><th>${t("grandTotalTitle")}</th></tr></thead>

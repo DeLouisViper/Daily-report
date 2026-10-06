@@ -81,9 +81,10 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
        </div>`
     : "";
 
-  const rowsHtml = rows.map((r) => {
+  const rowsHtml = rows.map((r, idx) => {
     const st = statusOf(r.pct);
     return `<tr>
+      <td class="num">${idx + 1}</td>
       <td><span class="${st.colorCls}">${escapeHtml(r.label)}</span></td>
       <td>${escapeHtml(r.assignee)}</td>
       <td class="num">${r.contract.toLocaleString()} ${escapeHtml(r.unit)}</td>
@@ -103,8 +104,9 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
     ? `<div class="report-section">
        <div class="section-title">${t("boreholeInfo")}</div>
        <table class="report-table-closed">
-         <thead><tr><th>${t("boreholeName")}</th><th>${t("coordN")}</th><th>${t("coordE")}</th><th>${t("elevation")}</th><th>${t("waterLevel")}</th></tr></thead>
-         <tbody>${boreholeRows.map((r) => `<tr>
+         <thead><tr><th style="width:5%;">${t("no")}</th><th>${t("boreholeName")}</th><th>${t("coordN")}</th><th>${t("coordE")}</th><th>${t("elevation")}</th><th>${t("waterLevel")}</th></tr></thead>
+         <tbody>${boreholeRows.map((r, idx) => `<tr>
+           <td class="num">${idx + 1}</td>
            <td><span class="${statusOf(r.pct).colorCls}">${escapeHtml(r.label)}</span></td>
            <td class="num">${escapeHtml(r.coordN || "—")}</td>
            <td class="num">${escapeHtml(r.coordE || "—")}</td>
@@ -119,8 +121,9 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
     ? `<div class="report-section">
        <div class="section-title">${t("soilRockTableTitle")}</div>
        <table class="report-table-closed">
-         <thead><tr><th>${t("borholeNameCol")}</th><th>${t("totalQtyCol")} (m)</th><th>${t("soilM")}</th><th>${t("rockM")}</th><th>${t("note")}</th></tr></thead>
-         <tbody>${boreholeRows.map((r) => `<tr>
+         <thead><tr><th style="width:5%;">${t("no")}</th><th>${t("borholeNameCol")}</th><th>${t("totalQtyCol")} (m)</th><th>${t("soilM")}</th><th>${t("rockM")}</th><th>${t("note")}</th></tr></thead>
+         <tbody>${boreholeRows.map((r, idx) => `<tr>
+           <td class="num">${idx + 1}</td>
            <td><span class="${statusOf(r.pct).colorCls}">${escapeHtml(r.label)}</span></td>
            <td class="num">${r.total.toLocaleString()}</td>
            <td class="num">${r.soilM != null && r.soilM !== "" ? r.soilM : "—"}</td>
@@ -175,9 +178,9 @@ export function buildReportHTML({ project, boreholes, surveyItems, dKey, current
       <div class="section-title">${t("itemsTable")}</div>
       <table class="report-table-closed">
         <thead><tr>
-          <th>${t("itemsTable")}</th><th>${t("assignee")}</th><th>${t("qtyContract")}</th><th>${t("qtyToday")}</th><th>${t("completedTotal")}</th><th>${t("completionRate")}</th><th>${t("status")}</th>
+          <th style="width:5%;">${t("no")}</th><th>${t("itemsTable")}</th><th>${t("assignee")}</th><th>${t("qtyContract")}</th><th>${t("qtyToday")}</th><th>${t("completedTotal")}</th><th>${t("completionRate")}</th><th>${t("status")}</th>
         </tr></thead>
-        <tbody>${rowsHtml || `<tr><td colspan="7" style="text-align:center;color:#888;">—</td></tr>`}</tbody>
+        <tbody>${rowsHtml || `<tr><td colspan="8" style="text-align:center;color:#888;">—</td></tr>`}</tbody>
       </table>
     </div>
 
@@ -858,13 +861,12 @@ function dtpFormatTotalsReport(totals) {
   return entries.map(([cur, v]) => dtpMoney(v, cur));
 }
 
-export function buildDrillTeamPaymentPdfHTML({
-  project, method, team, drillTeamRep, boreholes, days,
+function dtpTeamBodyHtml({
+  method, boreholes, days,
   soilRate, soilCurrency, rockRate, rockCurrency,
   workerCurrency, laborCurrency, startDate, endDate,
-  allowanceAmount, allowanceCurrency, advances, totals, currentUser, lang,
+  allowanceAmount, allowanceCurrency, allowanceNote, advances, totals,
 }) {
-  const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
   const totalAdvance = {};
   (advances || []).forEach((a) => { totalAdvance[a.currency] = (totalAdvance[a.currency] || 0) + (Number(a.amount) || 0); });
 
@@ -955,6 +957,35 @@ export function buildDrillTeamPaymentPdfHTML({
     </div>` : "";
 
   return `
+    ${volumeSection}
+    ${advancesSection}
+
+    <div class="report-section dtp-payment-block">
+      <table class="report-info-table report-table-closed">
+        <tr><td>${t("volumeTotalLabel")}</td><td>${volumeTotalsLine.join("; ")}</td></tr>
+        <tr><td>+ ${t("allowanceTitle")}</td><td>${allowanceAmount ? dtpMoney(allowanceAmount, allowanceCurrency) : dtpMoney(0, "VND")}${allowanceNote ? `<div style="font-size:10.5px;color:#555;margin-top:2px;">${escapeHtml(allowanceNote)}</div>` : ""}</td></tr>
+        <tr><td>− ${t("totalAdvanceLabel")}</td><td>${Object.keys(totalAdvance).length ? Object.entries(totalAdvance).map(([c, v]) => dtpMoney(v, c)).join("; ") : dtpMoney(0, "VND")}</td></tr>
+      </table>
+      <div class="dtp-grand-final">
+        <div class="dtp-grand-final-label">${t("grandTotalFinalLabel")}</div>
+        ${dtpFormatTotalsReport(totals).map((line) => `<div class="dtp-grand-final-value">${line}</div>`).join("")}
+      </div>
+    </div>`;
+}
+
+export function buildDrillTeamPaymentPdfHTML({
+  project, method, team, drillTeamRep, boreholes, days,
+  soilRate, soilCurrency, rockRate, rockCurrency,
+  workerCurrency, laborCurrency, startDate, endDate,
+  allowanceAmount, allowanceCurrency, allowanceNote, advances, totals, currentUser, lang,
+}) {
+  const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
+  const body = dtpTeamBodyHtml({
+    method, boreholes, days, soilRate, soilCurrency, rockRate, rockCurrency,
+    workerCurrency, laborCurrency, startDate, endDate,
+    allowanceAmount, allowanceCurrency, allowanceNote, advances, totals,
+  });
+  return `
   <div class="report-page" id="drillPayPrintArea">
     ${reportHead(lang, exportedAt)}
     <div class="report-title">${method === "contract" ? t("drillPayContractTitle") : t("drillPayDailyTitle")}</div>
@@ -966,20 +997,7 @@ export function buildDrillTeamPaymentPdfHTML({
       </table>
     </div>
 
-    ${volumeSection}
-    ${advancesSection}
-
-    <div class="report-section dtp-payment-block">
-      <table class="report-info-table report-table-closed">
-        <tr><td>${t("volumeTotalLabel")}</td><td>${volumeTotalsLine.join("; ")}</td></tr>
-        <tr><td>+ ${t("allowanceTitle")}</td><td>${allowanceAmount ? dtpMoney(allowanceAmount, allowanceCurrency) : dtpMoney(0, "VND")}</td></tr>
-        <tr><td>− ${t("totalAdvanceLabel")}</td><td>${Object.keys(totalAdvance).length ? Object.entries(totalAdvance).map(([c, v]) => dtpMoney(v, c)).join("; ") : dtpMoney(0, "VND")}</td></tr>
-      </table>
-      <div class="dtp-grand-final">
-        <div class="dtp-grand-final-label">${t("grandTotalFinalLabel")}</div>
-        ${dtpFormatTotalsReport(totals).map((line) => `<div class="dtp-grand-final-value">${line}</div>`).join("")}
-      </div>
-    </div>
+    ${body}
 
     <div class="sign-row" style="grid-template-columns: repeat(2, 1fr);">
       <div>
@@ -990,6 +1008,65 @@ export function buildDrillTeamPaymentPdfHTML({
         <div class="role">${t("drillTeamRepLabel")}</div>
         <div class="name">${escapeHtml(drillTeamRep || "")}${drillTeamRep ? "" : "&nbsp;"}</div>
       </div>
+    </div>
+  </div>`;
+}
+
+// Phiếu TỔNG HỢP nhiều đội khoan: mỗi đội là 1 cụm (tiêu đề + bảng khối lượng + ứng + thanh toán),
+// kèm bảng tóm tắt đầu phiếu và tổng cộng chung ở cuối.
+export function buildDrillTeamCombinedPdfHTML({ project, teams, currentUser, lang }) {
+  const exportedAt = new Date().toLocaleString(lang === "vi" ? "vi-VN" : "en-US");
+  const grand = {};
+  teams.forEach((tm) => Object.entries(tm.totals || {}).forEach(([c, v]) => { grand[c] = (grand[c] || 0) + v; }));
+  const summaryRows = teams.map((tm, i) => {
+    const totalM = (tm.boreholes || []).reduce((s, b) => s + (Number(b.soilM) || 0) + (Number(b.rockM) || 0), 0);
+    const vol = tm.method === "daily" ? `${(tm.days || []).length} ${t("days")}` : `${Math.round(totalM * 100) / 100} m`;
+    return `<tr>
+      <td class="num">${i + 1}</td>
+      <td>${escapeHtml(tm.team)}</td>
+      <td>${tm.method === "daily" ? t("methodDaily") : t("methodContract")}</td>
+      <td class="num">${vol}</td>
+      <td class="num">${dtpFormatTotalsReport(tm.totals).join("; ")}</td>
+    </tr>`;
+  }).join("");
+  const clusters = teams.map((tm, i) => `
+    <div class="report-section dtp-cluster-head">${i + 1}. ${t("drillTeamLabel")}: ${escapeHtml(tm.team)} · ${tm.method === "daily" ? t("methodDaily") : t("methodContract")}</div>
+    ${tm.hasSheet ? "" : `<div class="report-section" style="font-size:11px;font-style:italic;">${t("combinedNoSheetNote")}</div>`}
+    ${dtpTeamBodyHtml(tm)}`).join("");
+
+  return `
+  <div class="report-page" id="drillPayCombinedPrintArea">
+    ${reportHead(lang, exportedAt)}
+    <div class="report-title">${t("combinedPdfTitle")}</div>
+    <div class="report-section">
+      <table class="report-info-table report-table-closed">
+        <tr><td>${t("project")}</td><td>${escapeHtml(project?.name || "—")}</td></tr>
+        <tr><td>${t("fieldEngineer")}</td><td>${escapeHtml(project?.siteEngineer || "—")}</td></tr>
+        <tr><td>${t("drillTeamLabel")}</td><td>${escapeHtml(teams.map((tm) => tm.team).join(", "))}</td></tr>
+      </table>
+    </div>
+    <div class="report-section">
+      <table class="report-table-closed">
+        <thead><tr><th style="width:6%;">${t("no")}</th><th>${t("drillTeamLabel")}</th><th>${t("paymentMethod")}</th><th>${t("totalQty")}</th><th>${t("grandTotalTitle")}</th></tr></thead>
+        <tbody>${summaryRows}</tbody>
+      </table>
+    </div>
+    ${clusters}
+    <div class="report-section dtp-payment-block">
+      <div class="dtp-grand-final">
+        <div class="dtp-grand-final-label">${t("combinedGrandTotal")}</div>
+        ${dtpFormatTotalsReport(grand).map((line) => `<div class="dtp-grand-final-value">${line}</div>`).join("")}
+      </div>
+    </div>
+    <div class="sign-row" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+      <div>
+        <div class="role">${t("preparedBy")}</div>
+        <div class="name">${escapeHtml(currentUser?.name || currentUser?.email || "")}</div>
+      </div>
+      ${teams.map((tm) => `<div>
+        <div class="role">${t("drillTeamRepLabel")}<br><span style="font-weight:600;font-size:10.5px;">${escapeHtml(tm.team)}</span></div>
+        <div class="name">${escapeHtml(tm.drillTeamRep || "")}${tm.drillTeamRep ? "" : "&nbsp;"}</div>
+      </div>`).join("")}
     </div>
   </div>`;
 }

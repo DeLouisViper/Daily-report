@@ -602,3 +602,6 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   .cl-row { flex-wrap: wrap; }
   .cl-custom { margin-left: 0; }
 }
+
+/* Phiếu tổng hợp nhiều đội khoan: tiêu đề mỗi cụm đội */
+.dtp-cluster-head { margin-top: 18px; padding: 7px 12px; font-size: 13px; font-weight: 800; background: #f2f2f2; border-left: 4px solid #8b00ff; text-transform: uppercase; letter-spacing: .02em; }

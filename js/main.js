@@ -14,11 +14,11 @@ import {
   getEquipmentLogsOnce, updateEquipmentLogItemRemaining,
   watchConsumables, addConsumableItem, updateConsumableDay, deleteConsumableItem,
   watchMaterials, getMaterialsOnce, addMaterial, updateMaterial, deleteMaterial,
-  watchDrillTeamPayments, watchOpenDrillTeamPayment, getOpenDrillTeamPayment, saveDrillTeamPaymentProgress, finalizeDrillTeamPayment, deleteDrillTeamPayment,
+  watchDrillTeamPayments, watchOpenDrillTeamPayment, getOpenDrillTeamPayment, saveDrillTeamPaymentProgress, finalizeDrillTeamPayment, deleteDrillTeamPayment, closeDrillTeamPayment, normTeamKey,
 } from "./store.js";
 import { applyI18n, getLang, setLang, t } from "./i18n.js";
 import { initTheme, toggleTheme, getTheme, applyTheme } from "./theme.js";
-import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, buildRepairHistoryHTML, buildEquipmentCheckoutHTML, buildEquipmentCheckinHTML, buildMaterialsPdfHTML, buildDrillTeamPaymentPdfHTML, buildConsumablesReportHTML, buildChecklistHTML, CHECKLIST_ITEMS, CHECKLIST_OTHER, safeFileName, slugify } from "./report.js";
+import { buildReportHTML, buildReportRows, buildSummaryText, exportReportToPdf, buildDrillLogHTML, buildRepairHistoryHTML, buildEquipmentCheckoutHTML, buildEquipmentCheckinHTML, buildMaterialsPdfHTML, buildDrillTeamPaymentPdfHTML, buildDrillTeamCombinedPdfHTML, buildConsumablesReportHTML, buildChecklistHTML, CHECKLIST_ITEMS, CHECKLIST_OTHER, safeFileName, slugify } from "./report.js";
 import { EQUIPMENT_CATALOG, EQUIPMENT_CATEGORIES } from "./equipment-catalog.js";
 
 initTheme();
@@ -2452,6 +2452,39 @@ function dtpFormatTotals(totals) {
   return entries.map(([cur, v]) => formatMoney(v, cur));
 }
 
+// Các hàm thuần (không phụ thuộc trạng thái màn hình) để tính lại ngày công/tổng tiền từ 1 phiếu đã lưu
+// — dùng cho Phiếu tổng hợp nhiều đội khoan.
+function dtpDaysFromSheet(sh) {
+  return dtpDateRangeArray(sh.startDate, sh.endDate).map((dKey) => {
+    const o = (sh.dailyOverrides || {})[dKey] || {};
+    return {
+      dKey,
+      workerCount: o.workerCount ?? (sh.workerCount ?? 1),
+      laborCount: o.laborCount ?? (sh.laborCount ?? 1),
+      workerRate: o.workerRate ?? (sh.workerRate || 0),
+      laborRate: o.laborRate ?? (sh.laborRate || 0),
+    };
+  });
+}
+function dtpTotalsFromSheet(sh, mb, days) {
+  const totals = {};
+  const add = (cur, amt) => { if (!cur) return; totals[cur] = (totals[cur] || 0) + amt; };
+  if ((sh.method || "contract") === "contract") {
+    const totalSoil = mb.reduce((s, b) => s + (Number(b.soilM) || 0), 0);
+    const totalRock = mb.reduce((s, b) => s + (Number(b.rockM) || 0), 0);
+    add(sh.soilCurrency || "USD", totalSoil * (sh.soilRate || 0));
+    add(sh.rockCurrency || "USD", totalRock * (sh.rockRate || 0));
+  } else {
+    days.forEach((d) => {
+      add(sh.workerCurrency || "USD", d.workerCount * d.workerRate);
+      add(sh.laborCurrency || "USD", d.laborCount * d.laborRate);
+    });
+  }
+  add(sh.allowanceCurrency || "USD", Number(sh.allowanceAmount) || 0);
+  (sh.advances || []).forEach((a) => add(a.currency, -(Number(a.amount) || 0)));
+  return totals;
+}
+
 function renderDrillTeamPaymentView() {
   let currentProject = null;
   let currentPaymentId = null; // id phiếu "đang mở" hiện tại (null = chưa lưu lần nào)
@@ -2466,18 +2499,28 @@ function renderDrillTeamPaymentView() {
   let workerCount = 1, laborCount = 1;
   let dailyOverrides = {};
 
-  let allowanceAmount = 0, allowanceCurrency = "USD";
+  let allowanceAmount = 0, allowanceCurrency = "USD", allowanceNote = "";
   let advances = [];
   let drillTeamRep = "";
+  let savedSheetsCache = []; // tất cả phiếu đã lưu của dự án (cho Phiếu tổng hợp)
+  let combinedTeams = []; // các đội đã tick cho Phiếu tổng hợp, theo thứ tự tick
 
+  // Gộp các tên đội khoan chỉ khác chữ hoa/thường/dấu (VD "Nhuan" và "nhuan") thành 1 đội.
   function teamsList() {
-    const set = new Set();
-    boreholes.forEach((b) => { if (b.team) set.add(b.team); });
-    return [...set].sort();
+    const map = new Map();
+    boreholes.forEach((b) => {
+      const label = (b.team || "").trim();
+      const k = normTeamKey(label);
+      if (!k) return;
+      const cur = map.get(k);
+      if (!cur || (cur === cur.toLowerCase() && label !== label.toLowerCase())) map.set(k, label);
+    });
+    return [...map.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
   }
   function matchedBoreholes() {
     if (!selectedTeam) return [];
-    return boreholes.filter((b) => b.team === selectedTeam && dtpBoreholePct(b) >= 100);
+    const k = normTeamKey(selectedTeam);
+    return boreholes.filter((b) => normTeamKey(b.team) === k && dtpBoreholePct(b) >= 100);
   }
   function dayList() {
     return dtpDateRangeArray(startDate, endDate).map((dKey) => {
@@ -2529,6 +2572,11 @@ function renderDrillTeamPaymentView() {
     </div>
 
     <div class="card">
+      <h3>🗂 <span data-i18n="combinedTitle"></span></h3>
+      <div id="dp_combined"></div>
+    </div>
+
+    <div class="card">
       <h3 data-i18n="completedBoreholesTitle"></h3>
       <div class="table-scroll-hint">↔ <span data-i18n="swipeHint"></span></div>
       <div class="table-scroll"><table class="simple-table dtp-table" id="dp_boreholesTable"></table></div>
@@ -2551,6 +2599,7 @@ function renderDrillTeamPaymentView() {
         <div class="field" style="max-width:120px;"><label data-i18n="currency"></label>
           <select id="dp_allowanceCurrency"><option value="USD">USD</option><option value="VND">VND</option></select>
         </div>
+        <div class="field" style="flex:2 1 260px;"><label data-i18n="allowanceNote"></label><input type="text" id="dp_allowanceNote" data-i18n-placeholder="allowanceNotePlaceholder" /></div>
       </div>
     </div>
 
@@ -2590,13 +2639,22 @@ function renderDrillTeamPaymentView() {
   teamSelect.addEventListener("change", async () => {
     selectedTeam = teamSelect.value;
     currentPaymentId = null;
-    if (!selectedTeam) { applyLoadedPayment(null); renderDynamic(); localStorage.removeItem("dtp_lastTeam"); return; }
-    localStorage.setItem("dtp_lastTeam", selectedTeam);
-    showSaveIndicator(true);
-    const existing = await getOpenDrillTeamPayment(currentProject.id, selectedTeam);
-    showSaveIndicator();
-    applyLoadedPayment(existing);
+    const myTeam = selectedTeam;
+    // Hiện NGAY khối lượng hố khoan đã hoàn thành của đội vừa chọn (không chờ mạng),
+    // rồi mới nạp phiếu đang mở của đội đó (nếu có) ở phía sau.
+    applyLoadedPayment(null);
     renderDynamic();
+    if (!myTeam) { localStorage.removeItem("dtp_lastTeam"); return; }
+    localStorage.setItem("dtp_lastTeam", myTeam);
+    try {
+      showSaveIndicator(true);
+      const existing = await getOpenDrillTeamPayment(currentProject.id, myTeam);
+      if (existing && selectedTeam === myTeam) { applyLoadedPayment(existing); renderDynamic(); }
+    } catch (e) {
+      console.warn("failed to load open payment sheet", e);
+    } finally {
+      showSaveIndicator();
+    }
   });
 
   function updateMethodButtons() {
@@ -2608,6 +2666,7 @@ function renderDrillTeamPaymentView() {
 
   document.getElementById("dp_allowance").addEventListener("change", (e) => { allowanceAmount = Number(e.target.value) || 0; renderSummary(); });
   document.getElementById("dp_allowanceCurrency").addEventListener("change", (e) => { allowanceCurrency = e.target.value; renderSummary(); });
+  document.getElementById("dp_allowanceNote").addEventListener("change", (e) => { allowanceNote = e.target.value.trim(); });
 
   document.getElementById("dp_addAdvance").addEventListener("click", () => {
     advances.push({ date: dateKey(), amount: 0, currency: "USD", note: "" });
@@ -2623,7 +2682,7 @@ function renderDrillTeamPaymentView() {
       boreholeIds: matchedBoreholes().map((b) => b.id),
       soilRate, soilCurrency, rockRate, rockCurrency,
       startDate, endDate, workerRate, workerCurrency, laborRate, laborCurrency, workerCount, laborCount, dailyOverrides,
-      allowanceAmount, allowanceCurrency,
+      allowanceAmount, allowanceCurrency, allowanceNote,
       advances,
     };
   }
@@ -2642,7 +2701,7 @@ function renderDrillTeamPaymentView() {
     laborRate = payment?.laborRate || 0; laborCurrency = payment?.laborCurrency || "USD";
     workerCount = payment?.workerCount ?? 1; laborCount = payment?.laborCount ?? 1;
     dailyOverrides = payment?.dailyOverrides ? { ...payment.dailyOverrides } : {};
-    allowanceAmount = payment?.allowanceAmount || 0; allowanceCurrency = payment?.allowanceCurrency || "USD";
+    allowanceAmount = payment?.allowanceAmount || 0; allowanceCurrency = payment?.allowanceCurrency || "USD"; allowanceNote = payment?.allowanceNote || "";
     advances = payment?.advances ? payment.advances.map((a) => ({ ...a })) : [];
     drillTeamRep = payment?.drillTeamRep || selectedTeam;
 
@@ -2650,6 +2709,7 @@ function renderDrillTeamPaymentView() {
     renderMethodBody();
     document.getElementById("dp_allowance").value = allowanceAmount || "";
     document.getElementById("dp_allowanceCurrency").value = allowanceCurrency;
+    document.getElementById("dp_allowanceNote").value = allowanceNote;
     renderAdvancesTable();
     repInput.value = drillTeamRep;
     updateStatusLine();
@@ -2700,7 +2760,7 @@ function renderDrillTeamPaymentView() {
     // hoàn thành thuộc đội khoan KHÁC (hoặc chưa gán đội khoan), hiện rõ ra để
     // người dùng tự kiểm tra/đối chiếu trước khi xuất PDF, thay vì báo trống trơn.
     if (!mb.length && selectedTeam) {
-      const otherCompleted = boreholes.filter((b) => dtpBoreholePct(b) >= 100 && b.team !== selectedTeam);
+      const otherCompleted = boreholes.filter((b) => dtpBoreholePct(b) >= 100 && normTeamKey(b.team) !== normTeamKey(selectedTeam));
       if (otherCompleted.length) {
         noteEl.innerHTML = `
           <div class="hint-note">⚠ ${t("completedButNoTeamMatch")}</div>
@@ -2861,6 +2921,7 @@ function renderDrillTeamPaymentView() {
   // báo có thay đổi — KHÔNG dựng lại khung/select, KHÔNG gọi lại loadProject.
   function renderDynamic() {
     renderBoreholesTable();
+    renderCombinedCard();
     renderSummary();
   }
 
@@ -2892,6 +2953,8 @@ function renderDrillTeamPaymentView() {
   // đang mở lẫn đã hoàn thành) — bấm "Mở" để nạp lại và cập nhật tiếp, đồng
   // thời đây cũng là bằng chứng trực quan rằng "Lưu tiến độ" đã lưu thành công.
   function renderSavedSheets(sheets) {
+    savedSheetsCache = sheets;
+    renderCombinedCard();
     const el = document.getElementById("dp_savedSheets");
     if (!el) return;
     if (!sheets.length) { el.innerHTML = `<div class="empty-state">${t("noSavedSheets")}</div>`; return; }
@@ -2907,6 +2970,7 @@ function renderDrillTeamPaymentView() {
         </div>
         <div class="dtp-sheet-actions">
           <button type="button" class="btn btn-ghost btn-sm dtp-sheet-open">${t("openSheet")}</button>
+          ${canEdit() && s.status !== "completed" ? `<button type="button" class="btn btn-ghost btn-sm dtp-sheet-close">${t("closeSheet")}</button>` : ""}
           ${isAdmin() ? `<button type="button" class="btn btn-danger btn-sm dtp-sheet-delete">${t("delete")}</button>` : ""}
         </div>
       </div>`;
@@ -2914,11 +2978,24 @@ function renderDrillTeamPaymentView() {
     el.querySelectorAll(".dtp-sheet-row").forEach((row) => {
       const sheet = sheets.find((s) => s.id === row.dataset.id);
       row.querySelector(".dtp-sheet-open").addEventListener("click", () => {
-        selectedTeam = sheet.team || "";
+        selectedTeam = teamsList().find((l) => normTeamKey(l) === normTeamKey(sheet.team)) || sheet.team || "";
         teamSelect.value = selectedTeam;
         localStorage.setItem("dtp_lastTeam", selectedTeam);
         applyLoadedPayment(sheet);
         renderDynamic();
+      });
+      const closeBtn = row.querySelector(".dtp-sheet-close");
+      if (closeBtn) closeBtn.addEventListener("click", async () => {
+        if (!(await showConfirmModal(t("closeSheetConfirm")))) return;
+        try {
+          showSaveIndicator(true);
+          await closeDrillTeamPayment(currentProject.id, sheet.id, CURRENT_USER, sheet.team);
+          if (currentPaymentId === sheet.id) { currentPaymentId = null; applyLoadedPayment(null); renderDynamic(); }
+        } catch (e) {
+          alert(t("equipSaveError") + "\n" + (e?.message || e));
+        } finally {
+          showSaveIndicator();
+        }
       });
       const delBtn = row.querySelector(".dtp-sheet-delete");
       if (delBtn) delBtn.addEventListener("click", async () => {
@@ -2945,6 +3022,93 @@ function renderDrillTeamPaymentView() {
     teamSelect.dispatchEvent(new Event("change"));
   }
 
+  // ---------- PHIẾU TỔNG HỢP NHIỀU ĐỘI KHOAN ----------
+  function teamSheetFor(label) {
+    const k = normTeamKey(label);
+    const list = savedSheetsCache.filter((s) => normTeamKey(s.team) === k);
+    if (!list.length) return null;
+    const ms = (s) => s.updatedAt?.toMillis?.() || s.createdAt?.toMillis?.() || 0;
+    const open = list.filter((s) => s.status !== "completed").sort((a, b) => ms(b) - ms(a));
+    if (open.length) return open[0];
+    return [...list].sort((a, b) => ms(b) - ms(a))[0];
+  }
+  function teamDoneBoreholes(label) {
+    const k = normTeamKey(label);
+    return boreholes.filter((b) => normTeamKey(b.team) === k && dtpBoreholePct(b) >= 100);
+  }
+  function renderCombinedCard() {
+    const el = document.getElementById("dp_combined");
+    if (!el) return;
+    const teams = teamsList();
+    // bỏ khỏi danh sách chọn những đội không còn tồn tại (VD sau khi đổi dự án)
+    combinedTeams = combinedTeams.filter((k) => teams.some((l) => normTeamKey(l) === k));
+    if (!teams.length) { el.innerHTML = `<div class="empty-state">—</div>`; return; }
+    el.innerHTML = `
+      <p class="hint-note">${t("combinedHint")}</p>
+      ${teams.map((label) => {
+        const key = normTeamKey(label);
+        const idx = combinedTeams.indexOf(key);
+        const done = teamDoneBoreholes(label);
+        const totalM = Math.round(done.reduce((s, b) => s + (Number(b.soilM) || 0) + (Number(b.rockM) || 0), 0) * 100) / 100;
+        const sheet = teamSheetFor(label);
+        const badge = sheet
+          ? `<span class="badge ${sheet.status === "completed" ? "st-done" : "st-progress"}">${sheet.status === "completed" ? t("sheetStatusCompleted") : t("sheetStatusOpen")}</span>`
+          : `<span class="badge" style="background:var(--bg-elev);color:var(--text-dim);border:1px solid var(--border);">${t("noSheetBadge")}</span>`;
+        return `<label class="cl-row ${idx >= 0 ? "done" : ""}">
+          <input type="checkbox" class="dp-cmb-cb" data-key="${escapeAttr(key)}" ${idx >= 0 ? "checked" : ""} />
+          <span class="cl-no">${idx >= 0 ? idx + 1 : ""}</span>
+          <span class="cl-text"><span class="vi">${escapeHtml(label)}</span><span class="en">${done.length} ${t("boreholesDoneUnit")} · ${t("totalM")}: ${totalM}</span></span>
+          ${badge}
+        </label>`;
+      }).join("")}
+      <div class="equip-actions"><button type="button" class="btn btn-primary" id="dp_cmbExport">${t("combinedExport")}</button></div>`;
+    el.querySelectorAll(".dp-cmb-cb").forEach((cb) => cb.addEventListener("change", () => {
+      const k = cb.dataset.key;
+      if (cb.checked) { if (!combinedTeams.includes(k)) combinedTeams.push(k); }
+      else combinedTeams = combinedTeams.filter((x) => x !== k);
+      renderCombinedCard();
+    }));
+    el.querySelector("#dp_cmbExport").addEventListener("click", (e) => exportCombinedPdf(e.currentTarget));
+  }
+  async function exportCombinedPdf(btn) {
+    if (!currentProject) return;
+    if (!combinedTeams.length) { alert(t("selectTeamsFirst")); return; }
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = "…";
+    let holder = null;
+    try {
+      const allTeams = teamsList();
+      const teamsData = combinedTeams.map((key) => {
+        const label = allTeams.find((l) => normTeamKey(l) === key) || key;
+        const sheet = teamSheetFor(label);
+        const sh = sheet || {};
+        const mb = teamDoneBoreholes(label);
+        const days = sh.method === "daily" ? dtpDaysFromSheet(sh) : [];
+        return {
+          team: label, hasSheet: !!sheet, drillTeamRep: sh.drillTeamRep || label, method: sh.method || "contract",
+          boreholes: mb, days,
+          soilRate: sh.soilRate || 0, soilCurrency: sh.soilCurrency || "USD", rockRate: sh.rockRate || 0, rockCurrency: sh.rockCurrency || "USD",
+          workerCurrency: sh.workerCurrency || "USD", laborCurrency: sh.laborCurrency || "USD",
+          startDate: sh.startDate || "", endDate: sh.endDate || "",
+          allowanceAmount: sh.allowanceAmount || 0, allowanceCurrency: sh.allowanceCurrency || "USD", allowanceNote: sh.allowanceNote || "",
+          advances: sh.advances || [],
+          totals: dtpTotalsFromSheet(sh, mb, days),
+        };
+      });
+      const html = buildDrillTeamCombinedPdfHTML({ project: currentProject, teams: teamsData, currentUser: CURRENT_USER, lang: getLang() });
+      holder = document.createElement("div");
+      holder.style.position = "fixed"; holder.style.top = "0"; holder.style.left = "-99999px";
+      holder.innerHTML = html;
+      document.body.appendChild(holder);
+      await exportReportToPdf("drillPayCombinedPrintArea", `${slugify(currentProject?.name)}_tonghop_doikhoan_${dateKey()}.pdf`);
+    } catch (e) {
+      alert(t("equipSaveError") + "\n" + (e?.message || e));
+    } finally {
+      if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+      btn.disabled = false; btn.textContent = orig;
+    }
+  }
+
   async function exportDrillTeamPaymentPdf() {
     const btn = document.getElementById("dp_exportPdf");
     const orig = btn.textContent;
@@ -2962,7 +3126,7 @@ function renderDrillTeamPaymentView() {
         boreholes: matchedBoreholes(), days: method === "daily" ? dayList() : [],
         soilRate, soilCurrency, rockRate, rockCurrency,
         workerCurrency, laborCurrency, startDate, endDate,
-        allowanceAmount, allowanceCurrency, advances, totals,
+        allowanceAmount, allowanceCurrency, allowanceNote, advances, totals,
         currentUser: CURRENT_USER, lang: getLang(),
       });
       const holder = document.createElement("div");

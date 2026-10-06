@@ -1,6 +1,6 @@
 import {
   db, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
-  collection, query, orderBy, onSnapshot, serverTimestamp, deleteField,
+  collection, query, where, orderBy, onSnapshot, serverTimestamp, deleteField,
 } from "./firebase.js";
 
 // ---------- Users ----------

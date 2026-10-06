@@ -2454,6 +2454,12 @@ function dtpFormatTotals(totals) {
 
 // Các hàm thuần (không phụ thuộc trạng thái màn hình) để tính lại ngày công/tổng tiền từ 1 phiếu đã lưu
 // — dùng cho Phiếu tổng hợp nhiều đội khoan.
+// Phụ cấp: danh sách các khoản {date, amount, currency, note}. Phiếu cũ (1 ô phụ cấp duy nhất) tự được chuyển thành 1 khoản.
+function dtpAllowancesOf(sh) {
+  if (Array.isArray(sh.allowances)) return sh.allowances;
+  if (Number(sh.allowanceAmount) > 0) return [{ date: "", amount: Number(sh.allowanceAmount), currency: sh.allowanceCurrency || "USD", note: sh.allowanceNote || "" }];
+  return [];
+}
 function dtpDaysFromSheet(sh) {
   return dtpDateRangeArray(sh.startDate, sh.endDate).map((dKey) => {
     const o = (sh.dailyOverrides || {})[dKey] || {};
@@ -2480,7 +2486,7 @@ function dtpTotalsFromSheet(sh, mb, days) {
       add(sh.laborCurrency || "USD", d.laborCount * d.laborRate);
     });
   }
-  add(sh.allowanceCurrency || "USD", Number(sh.allowanceAmount) || 0);
+  dtpAllowancesOf(sh).forEach((a) => add(a.currency || "USD", Number(a.amount) || 0));
   (sh.advances || []).forEach((a) => add(a.currency, -(Number(a.amount) || 0)));
   return totals;
 }
@@ -2500,7 +2506,7 @@ function renderDrillTeamPaymentView() {
   let workerCount = 1, laborCount = 1;
   let dailyOverrides = {};
 
-  let allowanceAmount = 0, allowanceCurrency = "USD", allowanceNote = "";
+  let allowances = []; // các khoản phụ cấp của công ty: {date, amount, currency, note}
   let advances = [];
   let drillTeamRep = "";
   let savedSheetsCache = []; // tất cả phiếu đã lưu của dự án (cho Phiếu tổng hợp)
@@ -2550,7 +2556,7 @@ function renderDrillTeamPaymentView() {
         add(laborCurrency, d.laborCount * d.laborRate);
       });
     }
-    add(allowanceCurrency, allowanceAmount);
+    allowances.forEach((a) => add(a.currency, Number(a.amount) || 0));
     advances.forEach((a) => add(a.currency, -(Number(a.amount) || 0)));
     return totals;
   }
@@ -2595,13 +2601,8 @@ function renderDrillTeamPaymentView() {
 
     <div class="card">
       <h3 data-i18n="allowanceTitle"></h3>
-      <div class="field-row">
-        <div class="field"><label data-i18n="allowanceAmount"></label><input type="number" min="0" id="dp_allowance" value="" /></div>
-        <div class="field" style="max-width:120px;"><label data-i18n="currency"></label>
-          <select id="dp_allowanceCurrency"><option value="USD">USD</option><option value="VND">VND</option></select>
-        </div>
-        <div class="field" style="flex:2 1 260px;"><label data-i18n="allowanceNote"></label><input type="text" id="dp_allowanceNote" data-i18n-placeholder="allowanceNotePlaceholder" /></div>
-      </div>
+      <div id="dp_allowancesTable"></div>
+      <button type="button" class="btn btn-ghost btn-sm" id="dp_addAllowance" data-i18n="addAllowance"></button>
     </div>
 
     <div class="card">
@@ -2666,9 +2667,11 @@ function renderDrillTeamPaymentView() {
   methodContractBtn.addEventListener("click", () => { method = "contract"; updateMethodButtons(); renderMethodBody(); renderSummary(); });
   methodDailyBtn.addEventListener("click", () => { method = "daily"; updateMethodButtons(); renderMethodBody(); renderSummary(); });
 
-  document.getElementById("dp_allowance").addEventListener("change", (e) => { allowanceAmount = Number(e.target.value) || 0; renderSummary(); });
-  document.getElementById("dp_allowanceCurrency").addEventListener("change", (e) => { allowanceCurrency = e.target.value; renderSummary(); });
-  document.getElementById("dp_allowanceNote").addEventListener("change", (e) => { allowanceNote = e.target.value.trim(); });
+  document.getElementById("dp_addAllowance").addEventListener("click", () => {
+    allowances.push({ date: dateKey(), amount: 0, currency: "USD", note: "" });
+    renderAllowancesTable();
+    renderSummary();
+  });
 
   document.getElementById("dp_addAdvance").addEventListener("click", () => {
     advances.push({ date: dateKey(), amount: 0, currency: "USD", note: "" });
@@ -2684,7 +2687,7 @@ function renderDrillTeamPaymentView() {
       boreholeIds: matchedBoreholes().map((b) => b.id),
       soilRate, soilCurrency, rockRate, rockCurrency,
       startDate, endDate, workerRate, workerCurrency, laborRate, laborCurrency, workerCount, laborCount, dailyOverrides,
-      allowanceAmount, allowanceCurrency, allowanceNote,
+      allowances,
       advances,
     };
   }
@@ -2706,15 +2709,13 @@ function renderDrillTeamPaymentView() {
     laborRate = payment?.laborRate || 0; laborCurrency = payment?.laborCurrency || "USD";
     workerCount = payment?.workerCount ?? 1; laborCount = payment?.laborCount ?? 1;
     dailyOverrides = payment?.dailyOverrides ? { ...payment.dailyOverrides } : {};
-    allowanceAmount = payment?.allowanceAmount || 0; allowanceCurrency = payment?.allowanceCurrency || "USD"; allowanceNote = payment?.allowanceNote || "";
+    allowances = payment ? dtpAllowancesOf(payment).map((a) => ({ ...a })) : [];
     advances = payment?.advances ? payment.advances.map((a) => ({ ...a })) : [];
     drillTeamRep = payment?.drillTeamRep || selectedTeam;
 
     updateMethodButtons();
     renderMethodBody();
-    document.getElementById("dp_allowance").value = allowanceAmount || "";
-    document.getElementById("dp_allowanceCurrency").value = allowanceCurrency;
-    document.getElementById("dp_allowanceNote").value = allowanceNote;
+    renderAllowancesTable();
     renderAdvancesTable();
     repInput.value = drillTeamRep;
     updateStatusLine();
@@ -2905,6 +2906,32 @@ function renderDrillTeamPaymentView() {
     }
   }
 
+  function renderAllowancesTable() {
+    const el = document.getElementById("dp_allowancesTable");
+    if (!el) return;
+    if (!allowances.length) { el.innerHTML = `<div class="empty-state">${t("noAllowances")}</div>`; return; }
+    el.innerHTML = `<div class="table-scroll"><table class="simple-table">
+      <thead><tr><th data-i18n="dateCol"></th><th data-i18n="allowanceAmount"></th><th data-i18n="currency"></th><th data-i18n="noteCol"></th><th></th></tr></thead>
+      <tbody>
+        ${allowances.map((a, i) => `<tr data-idx="${i}">
+          <td><input type="date" class="dp-al-date" lang="vi" value="${a.date || ""}" /></td>
+          <td><input type="number" min="0" class="dp-al-amount" value="${a.amount || ""}" style="width:100px;" /></td>
+          <td><select class="dp-al-currency"><option value="USD" ${a.currency === "USD" ? "selected" : ""}>USD</option><option value="VND" ${a.currency === "VND" ? "selected" : ""}>VND</option></select></td>
+          <td><input type="text" class="dp-al-note" value="${escapeAttr(a.note)}" placeholder="${escapeAttr(t("allowanceNotePlaceholder"))}" /></td>
+          <td><button type="button" class="btn btn-ghost btn-sm dp-al-remove">✕</button></td>
+        </tr>`).join("")}
+      </tbody>
+    </table></div>`;
+    applyI18n(el);
+    el.querySelectorAll("tr[data-idx]").forEach((row) => {
+      const idx = +row.dataset.idx;
+      row.querySelector(".dp-al-date").addEventListener("change", (e) => { allowances[idx].date = e.target.value; });
+      row.querySelector(".dp-al-amount").addEventListener("change", (e) => { allowances[idx].amount = Number(e.target.value) || 0; renderSummary(); });
+      row.querySelector(".dp-al-currency").addEventListener("change", (e) => { allowances[idx].currency = e.target.value; renderSummary(); });
+      row.querySelector(".dp-al-note").addEventListener("change", (e) => { allowances[idx].note = e.target.value; });
+      row.querySelector(".dp-al-remove").addEventListener("click", () => { allowances.splice(idx, 1); renderAllowancesTable(); renderSummary(); });
+    });
+  }
   function renderAdvancesTable() {
     const el = document.getElementById("dp_advancesTable");
     if (!advances.length) { el.innerHTML = `<div class="empty-state">${t("noAdvances")}</div>`; return; }
@@ -3111,7 +3138,7 @@ function renderDrillTeamPaymentView() {
           soilRate: sh.soilRate || 0, soilCurrency: sh.soilCurrency || "USD", rockRate: sh.rockRate || 0, rockCurrency: sh.rockCurrency || "USD",
           workerCurrency: sh.workerCurrency || "USD", laborCurrency: sh.laborCurrency || "USD",
           startDate: sh.startDate || "", endDate: sh.endDate || "",
-          allowanceAmount: sh.allowanceAmount || 0, allowanceCurrency: sh.allowanceCurrency || "USD", allowanceNote: sh.allowanceNote || "",
+          allowances: dtpAllowancesOf(sh),
           advances: sh.advances || [],
           totals: dtpTotalsFromSheet(sh, mb, days),
         };
@@ -3148,7 +3175,7 @@ function renderDrillTeamPaymentView() {
         boreholes: matchedBoreholes(), days: method === "daily" ? dayList() : [],
         soilRate, soilCurrency, rockRate, rockCurrency,
         workerCurrency, laborCurrency, startDate, endDate,
-        allowanceAmount, allowanceCurrency, allowanceNote, advances, totals,
+        allowances, advances, totals,
         currentUser: CURRENT_USER, lang: getLang(),
       });
       const holder = document.createElement("div");
@@ -3169,6 +3196,7 @@ function renderDrillTeamPaymentView() {
   // Khởi tạo lần đầu — khôi phục lại dự án đã chọn gần nhất (nếu còn tồn tại)
   // để không phải chọn lại từ đầu khi rời tab rồi quay lại.
   renderMethodBody();
+  renderAllowancesTable();
   renderAdvancesTable();
   renderSummary();
   if (projectsCache.length) {

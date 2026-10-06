@@ -2488,6 +2488,7 @@ function dtpTotalsFromSheet(sh, mb, days) {
 function renderDrillTeamPaymentView() {
   let currentProject = null;
   let currentPaymentId = null; // id phiếu "đang mở" hiện tại (null = chưa lưu lần nào)
+  let currentPaymentStatus = ""; // "open" | "completed" | "" (chưa lưu)
   let boreholes = [];
   let selectedTeam = "";
   let method = "contract"; // "contract" | "daily"
@@ -2620,6 +2621,7 @@ function renderDrillTeamPaymentView() {
       <div id="dp_status" class="dtp-status"></div>
       <div class="equip-actions">
         <button class="btn btn-ghost" id="dp_save" data-i18n="saveProgress"></button>
+        <button class="btn btn-ghost hidden" id="dp_closeSheet" data-i18n="closeSheet"></button>
         <button class="btn btn-primary" id="dp_exportPdf" data-i18n="saveAndExportPdf"></button>
       </div>
     </div>
@@ -2687,12 +2689,15 @@ function renderDrillTeamPaymentView() {
     };
   }
   function updateStatusLine() {
+    const closeEl = document.getElementById("dp_closeSheet");
+    if (closeEl) closeEl.classList.toggle("hidden", !(canEdit() && currentPaymentId && currentPaymentStatus !== "completed"));
     const el = document.getElementById("dp_status");
     if (!el) return;
     el.textContent = currentPaymentId ? t("progressSavedNote") : t("notSavedYetNote");
   }
   function applyLoadedPayment(payment) {
     currentPaymentId = payment ? payment.id : null;
+    currentPaymentStatus = payment?.status || "";
     method = payment?.method || "contract";
     soilRate = payment?.soilRate || 0; soilCurrency = payment?.soilCurrency || "USD";
     rockRate = payment?.rockRate || 0; rockCurrency = payment?.rockCurrency || "USD";
@@ -2722,6 +2727,7 @@ function renderDrillTeamPaymentView() {
     try {
       showSaveIndicator(true);
       currentPaymentId = await saveDrillTeamPaymentProgress(currentProject.id, currentPaymentId, buildPayload(), CURRENT_USER);
+      currentPaymentStatus = "open";
       showSaveIndicator();
       updateStatusLine();
     } catch (e) {
@@ -2733,6 +2739,21 @@ function renderDrillTeamPaymentView() {
   });
 
   document.getElementById("dp_exportPdf").addEventListener("click", exportDrillTeamPaymentPdf);
+  document.getElementById("dp_closeSheet").addEventListener("click", async () => {
+    if (!currentProject || !currentPaymentId) return;
+    if (!(await showConfirmModal(t("closeSheetConfirm")))) return;
+    try {
+      showSaveIndicator(true);
+      await closeDrillTeamPayment(currentProject.id, currentPaymentId, CURRENT_USER, selectedTeam);
+      currentPaymentId = null;
+      applyLoadedPayment(null);
+      renderDynamic();
+    } catch (e) {
+      alert(t("equipSaveError") + "\n" + (e?.message || e));
+    } finally {
+      showSaveIndicator();
+    }
+  });
 
   function fillTeamSelect() {
     const teams = teamsList();
@@ -3118,6 +3139,7 @@ function renderDrillTeamPaymentView() {
       const totals = computeTotals();
       showSaveIndicator(true);
       currentPaymentId = await finalizeDrillTeamPayment(currentProject.id, currentPaymentId, buildPayload(), CURRENT_USER);
+      currentPaymentStatus = "completed";
       showSaveIndicator();
       updateStatusLine();
 

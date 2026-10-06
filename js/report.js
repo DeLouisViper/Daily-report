@@ -450,11 +450,13 @@ export function computePagePieces(el, elRect, usableHeightPx) {
     if (pageHasContent) pieces.push({ top: pageTop, bottom: pageBottom, headerRect: null });
     pageHasContent = false;
   };
+  const rectOf = (c) => {
+    const r = c.getBoundingClientRect();
+    return { top: r.top - elRect.top, bottom: r.bottom - elRect.top };
+  };
 
-  children.forEach((child) => {
-    const r = child.getBoundingClientRect();
-    const childTop = r.top - elRect.top;
-    const childBottom = r.bottom - elRect.top;
+  // Đặt 1 khối (childTop..childBottom) vào trang hiện tại, hoặc sang trang mới nếu không đủ chỗ.
+  function place(child, childTop, childBottom) {
     const childHeight = childBottom - childTop;
     const remainingOnPage = pageHasContent ? (pageTop + usableHeightPx - pageBottom) : usableHeightPx;
 
@@ -490,7 +492,34 @@ export function computePagePieces(el, elRect, usableHeightPx) {
     } else {
       pageBottom = childBottom;
     }
-  });
+  }
+
+  // Phiếu tổng hợp nhiều đội khoan: mỗi "cụm" đội khoan (tiêu đề .dtp-cluster-head + các bảng ngay sau
+  // nó, cho tới cụm kế tiếp hoặc phần tổng cộng .dtp-cluster-stop) được coi là 1 khối liền nhau — không
+  // để tiêu đề đội nằm cuối trang còn bảng sang trang sau. Cụm vừa 1 trang mà không đủ chỗ thì chuyển
+  // nguyên cụm sang trang mới; cụm dài hơn 1 trang thì bắt đầu ở trang mới rồi mới ngắt theo từng bảng.
+  let i = 0;
+  while (i < children.length) {
+    const child = children[i];
+    if (child.classList.contains("dtp-cluster-head")) {
+      let j = i + 1;
+      while (j < children.length && !children[j].classList.contains("dtp-cluster-head") && !children[j].classList.contains("dtp-cluster-stop")) j++;
+      const group = children.slice(i, j);
+      const top = rectOf(group[0]).top;
+      const bottom = rectOf(group[group.length - 1]).bottom;
+      if (bottom - top <= usableHeightPx) {
+        place(group[0], top, bottom);
+      } else {
+        flushPage();
+        group.forEach((g) => { const r = rectOf(g); place(g, r.top, r.bottom); });
+      }
+      i = j;
+      continue;
+    }
+    const r = rectOf(child);
+    place(child, r.top, r.bottom);
+    i++;
+  }
   flushPage();
   return pieces;
 }
@@ -1052,7 +1081,7 @@ export function buildDrillTeamCombinedPdfHTML({ project, teams, currentUser, lan
       </table>
     </div>
     ${clusters}
-    <div class="report-section dtp-payment-block">
+    <div class="report-section dtp-payment-block dtp-cluster-stop">
       <div class="dtp-grand-final">
         <div class="dtp-grand-final-label">${t("combinedGrandTotal")}</div>
         ${dtpFormatTotalsReport(grand).map((line) => `<div class="dtp-grand-final-value">${line}</div>`).join("")}

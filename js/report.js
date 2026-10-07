@@ -1066,12 +1066,16 @@ export function buildDrillTeamCombinedPdfHTML({ project, teams, currentUser, lan
   const grand = {};
   teams.forEach((tm) => Object.entries(tm.totals || {}).forEach(([c, v]) => { grand[c] = (grand[c] || 0) + v; }));
   const summaryRows = teams.map((tm, i) => {
-    const totalM = (tm.boreholes || []).reduce((s, b) => s + (Number(b.soilM) || 0) + (Number(b.rockM) || 0), 0);
-    const vol = tm.method === "daily" ? `${(tm.days || []).length} ${t("days")}` : `${Math.round(totalM * 100) / 100} m`;
+    const r2 = (x) => Math.round(x * 100) / 100;
+    const soilTotal = (tm.boreholes || []).reduce((s, b) => s + (Number(b.soilM) || 0), 0);
+    const rockTotal = (tm.boreholes || []).reduce((s, b) => s + (Number(b.rockM) || 0), 0);
+    const vol = tm.method === "daily" ? `${(tm.days || []).length} ${t("days")}` : `${r2(soilTotal + rockTotal)} m`;
     return `<tr>
       <td class="num">${i + 1}</td>
       <td>${escapeHtml(tm.team)}</td>
       <td>${tm.method === "daily" ? t("methodDaily") : t("methodContract")}</td>
+      <td class="num">${r2(soilTotal)}</td>
+      <td class="num">${r2(rockTotal)}</td>
       <td class="num">${vol}</td>
       <td class="num">${dtpFormatTotalsReport(tm.totals).join("; ")}</td>
     </tr>`;
@@ -1136,8 +1140,9 @@ export function buildDrillTeamCombinedPdfHTML({ project, teams, currentUser, lan
     ${volumeAllHtml}
     <div class="report-section">
       <table class="report-table-closed">
-        <thead><tr><th style="width:6%;">${t("no")}</th><th>${t("drillTeamLabel")}</th><th>${t("paymentMethod")}</th><th>${t("totalQty")}</th><th>${t("grandTotalTitle")}</th></tr></thead>
+        <thead><tr><th style="width:6%;">${t("no")}</th><th>${t("drillTeamLabel")}</th><th>${t("paymentMethod")}</th><th>${t("soilM")}</th><th>${t("rockM")}</th><th>${t("totalQty")}</th><th>${t("grandTotalTitle")}</th></tr></thead>
         <tbody>${summaryRows}</tbody>
+        <tfoot><tr class="report-total-row"><td colspan="3">${t("total")}</td><td class="num">${Math.round(teams.reduce((s, tm) => s + (tm.boreholes || []).reduce((x, b) => x + (Number(b.soilM) || 0), 0), 0) * 100) / 100}</td><td class="num">${Math.round(teams.reduce((s, tm) => s + (tm.boreholes || []).reduce((x, b) => x + (Number(b.rockM) || 0), 0), 0) * 100) / 100}</td><td></td><td class="num">${dtpFormatTotalsReport(grand).join("; ")}</td></tr></tfoot>
       </table>
     </div>
     ${clusters}
